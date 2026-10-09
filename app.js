@@ -29,7 +29,10 @@ const I = {
   cap: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 19c0-7 5-11 11-11s11 3 11 8c0 2-2 3-4 3z" fill="currentColor"/><path d="M5 19h14c2 0 5 1 8 3H7c-1 0-2-1-2-3z" fill="currentColor" opacity=".7"/><circle cx="15" cy="8" r="2" fill="currentColor"/></svg>',
   crown: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M5 24l-1-14 7 6 5-9 5 9 7-6-1 14z" fill="#d9ab52"/><path d="M5 26h22" stroke="#d9ab52" stroke-width="2.4"/></svg>',
   bottle: '<svg viewBox="0 0 32 32" aria-hidden="true"><path d="M13 3h6v6c0 2 4 3 4 8v10c0 1-1 2-2 2H11c-1 0-2-1-2-2V17c0-5 4-6 4-8z" fill="#c4813a"/><rect x="11" y="16" width="10" height="7" rx="1" fill="#f3e7cc"/><rect x="13" y="2" width="6" height="3" fill="#7a4a1f"/></svg>',
+  // drag handle: an SVG (not a text glyph), so it can't be selected and always renders the same
+  grip: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="currentColor"><circle cx="7" cy="4.5" r="1.8"/><circle cx="13" cy="4.5" r="1.8"/><circle cx="7" cy="10" r="1.8"/><circle cx="13" cy="10" r="1.8"/><circle cx="7" cy="15.5" r="1.8"/><circle cx="13" cy="15.5" r="1.8"/></g></svg>',
 };
+const SLOT = '<span class="icon-slot" aria-hidden="true"></span>';
 const TOKEN_ICON = { henchman: I.hat, fbi: I.badge, cia: I.badge, driver: I.wheel, cleaner: I.cross };
 const ROLE_ICON = { ...TOKEN_ICON, godfather: I.crown, thief: I.gem, urchin: I.cap };
 const TOKEN_NAME = { henchman: 'חייל נאמן', fbi: 'סוכן FBI', cia: 'סוכן CIA', driver: 'נהג', cleaner: 'המנקה' };
@@ -262,9 +265,9 @@ function viewLobby() {
       id === s.hostId ? '<span class="tag">מארח</span>' : '',
     ].join('');
     const ctrls = isHost ? `
-      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">⠿</span>
-      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : ''}
-      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : ''}` : '';
+      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">${I.grip}</span>
+      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : SLOT}
+      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : SLOT}` : '';
     return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><span class="pname">${esc(p.name)}</span>${tags}${ctrls}</li>`;
   }).join('');
   const enough = n >= MIN_PLAYERS;
@@ -757,6 +760,7 @@ document.addEventListener('pointerdown', (ev) => {
   try { grip.setPointerCapture(ev.pointerId); } catch {}
   li.classList.add('dragging');
   ul.classList.add('sorting');
+  document.body.classList.add('seat-sorting');
   dragLoop();
 });
 function dragLoop() {
@@ -789,6 +793,7 @@ function endDrag(commit) {
   try { d.grip.releasePointerCapture(d.pointerId); } catch {}
   d.rows.forEach((r) => { r.style.transform = ''; });
   d.li.classList.remove('dragging'); d.ul.classList.remove('sorting');
+  document.body.classList.remove('seat-sorting');
   if (commit && d.to !== d.from) {
     // show the new order straight away; the state update re-renders with the same result
     d.ul.insertBefore(d.li, d.rows[d.to + (d.to > d.from ? 1 : 0)] || null);
