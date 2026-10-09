@@ -289,7 +289,7 @@ function viewLobby() {
       ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : ''}
       ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : ''}
       <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">${I.grip}</span>` : '';
-    return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><div class="who"><span class="pname">${esc(p.name)}</span>${tags}</div>${ctrls}</li>`;
+    return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><div class="pcell"><span class="pname">${esc(p.name)}</span>${tags}</div>${ctrls}</li>`;
   }).join('');
   const enough = n >= MIN_PLAYERS;
   return `
@@ -378,7 +378,7 @@ function seatList(s, opts = {}) {
     if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>`;
     if (isOut(s, id)) status += '<span class="tag red">מודח</span>';
     return `<li class="${id === pid ? 'me' : ''} ${isOut(s, id) ? 'out' : ''} ${s.phase === 'theft' && id === holder ? 'holder' : ''}">
-      <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="who"><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</div></li>`;
+      <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</div></li>`;
   }).join('');
   return `<ul class="players">${rows}</ul>`;
 }
@@ -484,7 +484,7 @@ function viewInvestigation() {
     const rows = takers(s).map((id) => {
       const outP = isOut(s, id);
       const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>` : '';
-      return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="who"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
+      return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
         ${outP ? '<span class="tag red">מודח</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
     }).join('');
     return `<section>
