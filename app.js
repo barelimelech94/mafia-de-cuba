@@ -735,6 +735,38 @@ document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-ho
 document.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && e.target.closest && e.target.closest('[data-hold="pocket"]') && !e.repeat) { e.preventDefault(); ui.pocket = true; render(); $('[data-hold="pocket"]')?.focus(); } });
 document.addEventListener('keyup', (e) => { if ((e.key === ' ' || e.key === 'Enter') && ui.pocket) { ui.pocket = false; render(); $('[data-hold="pocket"]')?.focus(); } });
 
+// ---------- back button ----------
+// The browser's Back button steps back inside the app instead of leaving it.
+// One sentinel history entry sits on top of the real one; each Back press pops it,
+// we handle the press, and re-push it. Chrome ignores entries pushed before the
+// first user interaction, so the sentinel is armed on the first tap.
+let backArmed = false;
+function armBack() {
+  if (backArmed) return;
+  backArmed = true;
+  history.pushState({ mdc: 1 }, '', location.href);
+}
+['click', 'pointerup', 'touchend', 'keydown'].forEach((t) => document.addEventListener(t, armBack, { capture: true, passive: true }));
+
+// Returns true when Back was consumed inside the app, false when the app should let go.
+function handleBack() {
+  if (ui.rules || ui.menu) { ui.rules = false; ui.menu = false; renderOverlay(); return true; }
+  if (game && ui.accuseTarget) { ui.accuseTarget = null; renderOverlay(); return true; }
+  if (game && (game.accusation || (game.reveal && game.reveal.seq > ui.revealSeen && game.players[pid]))) return true; // can't dismiss a live accusation/reveal
+  if (code && game === undefined) { ui.joining = false; leaveTable(); return true; } // still connecting: back to home
+  if (code && game) {
+    if (ui.pick) { ui.pick = null; render(); return true; }
+    if (ui.boxOpen) { ui.boxOpen = false; render(); return true; }
+    ui.menu = true; renderOverlay(); return true; // at a table: open the menu (has "leave") instead of exiting by accident
+  }
+  return false; // home screen: normal Back
+}
+window.addEventListener('popstate', () => {
+  if (!backArmed) return;
+  if (handleBack()) history.pushState({ mdc: 1 }, '', location.href);
+  else { backArmed = false; history.back(); }
+});
+
 // Keep the screen awake during a game
 let lock = null;
 async function wake() {
