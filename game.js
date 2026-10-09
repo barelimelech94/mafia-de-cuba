@@ -140,6 +140,16 @@ export function reduce(state, action) {
       [s.order[i], s.order[j]] = [s.order[j], s.order[i]];
       return s;
     }
+    case 'reorder': {
+      if (!isHost) fail('רק המארח מסדר את המקומות');
+      if (s.phase !== 'lobby') fail('אפשר לסדר מקומות רק בלובי');
+      const i = s.order.indexOf(p.target);
+      const j = Math.max(0, Math.min(s.order.length - 1, p.to | 0));
+      if (i < 0 || i === j) return s;
+      s.order.splice(i, 1);
+      s.order.splice(j, 0, p.target);
+      return s;
+    }
     case 'setGodfather': {
       if (!isHost) fail('רק המארח בוחר סנדק');
       if (s.phase !== 'lobby') fail('אפשר לבחור סנדק רק בלובי');

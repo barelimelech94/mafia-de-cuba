@@ -65,6 +65,7 @@ let code = null;
 let game = null;
 let unsub = null;
 let connected = true;
+let drag = null; // active lobby drag-to-reorder gesture
 const ui = {
   boxOpen: false, boxTurnKey: '', pick: null, pickN: 1, hideN: 0,
   pocket: false, accuseTarget: null, rules: false, menu: false,
@@ -152,6 +153,7 @@ function tick() {
 
 // ---------- render ----------
 function render() {
+  if (drag) { drag.stale = true; return; } // don't rebuild the DOM under a finger mid-drag
   const app = $('#app');
   if (!code) { app.innerHTML = viewHome(); renderOverlay(); return; }
   if (game === undefined) {
@@ -174,6 +176,7 @@ function render() {
   app.innerHTML = band() + offline + test + body;
   if (game.phase === 'lobby') drawQR();
   renderOverlay();
+  if (ui.gripFocus) { app.querySelector(`[data-drag="${ui.gripFocus}"]`)?.focus(); ui.gripFocus = null; }
 }
 
 function band() {
@@ -259,8 +262,7 @@ function viewLobby() {
       id === s.hostId ? '<span class="tag">מארח</span>' : '',
     ].join('');
     const ctrls = isHost ? `
-      <button class="icon ghost" data-act="move" data-id="${id}" data-dir="-1" aria-label="הזז למעלה" ${i === 0 ? 'disabled' : ''}>▲</button>
-      <button class="icon ghost" data-act="move" data-id="${id}" data-dir="1" aria-label="הזז למטה" ${i === n - 1 ? 'disabled' : ''}>▼</button>
+      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">⠿</span>
       ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : ''}
       ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : ''}` : '';
     return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><span class="pname">${esc(p.name)}</span>${tags}${ctrls}</li>`;
@@ -734,6 +736,76 @@ document.addEventListener('pointercancel', holdOff);
 document.addEventListener('contextmenu', (e) => { if (e.target.closest('[data-hold]')) e.preventDefault(); });
 document.addEventListener('keydown', (e) => { if ((e.key === ' ' || e.key === 'Enter') && e.target.closest && e.target.closest('[data-hold="pocket"]') && !e.repeat) { e.preventDefault(); ui.pocket = true; render(); $('[data-hold="pocket"]')?.focus(); } });
 document.addEventListener('keyup', (e) => { if ((e.key === ' ' || e.key === 'Enter') && ui.pocket) { ui.pocket = false; render(); $('[data-hold="pocket"]')?.focus(); } });
+
+// ---------- drag to reorder seats (host, lobby) ----------
+document.addEventListener('pointerdown', (ev) => {
+  const grip = ev.target.closest && ev.target.closest('[data-drag]');
+  if (!grip || drag || (ev.pointerType === 'mouse' && ev.button !== 0)) return;
+  const li = grip.closest('li'), ul = li && li.parentElement;
+  if (!ul) return;
+  ev.preventDefault();
+  const rows = [...ul.children];
+  const rects = rows.map((r) => r.getBoundingClientRect());
+  const from = rows.indexOf(li);
+  drag = {
+    id: grip.dataset.drag, li, ul, rows, from, to: from, pointerId: ev.pointerId, grip,
+    startY: ev.clientY, curY: ev.clientY, scrollY0: window.scrollY,
+    centers: rects.map((r) => r.top + r.height / 2 + window.scrollY),
+    step: rects[from].height + (rects[1] ? Math.max(0, rects[1].top - rects[0].bottom) : 6),
+    raf: 0, stale: false,
+  };
+  try { grip.setPointerCapture(ev.pointerId); } catch {}
+  li.classList.add('dragging');
+  ul.classList.add('sorting');
+  dragLoop();
+});
+function dragLoop() {
+  if (!drag) return;
+  const d = drag;
+  // auto-scroll near the screen edges
+  const edge = 80;
+  if (d.curY < edge) window.scrollBy(0, -Math.ceil((edge - d.curY) / 6));
+  else if (d.curY > window.innerHeight - edge) window.scrollBy(0, Math.ceil((d.curY - (window.innerHeight - edge)) / 6));
+  const dy = d.curY - d.startY + (window.scrollY - d.scrollY0);
+  d.li.style.transform = `translateY(${dy}px)`;
+  const mid = d.centers[d.from] + dy; // dragged row's centre in page coordinates
+  let to = d.from, best = Infinity;
+  d.centers.forEach((c, i) => { const dist = Math.abs(c - mid); if (dist < best) { best = dist; to = i; } });
+  d.to = to;
+  d.rows.forEach((r, i) => {
+    if (i === d.from) return;
+    const shift = d.from < to && i > d.from && i <= to ? -d.step : d.from > to && i < d.from && i >= to ? d.step : 0;
+    r.style.transform = shift ? `translateY(${shift}px)` : '';
+  });
+  d.raf = requestAnimationFrame(dragLoop);
+}
+document.addEventListener('pointermove', (ev) => {
+  if (drag && ev.pointerId === drag.pointerId) { drag.curY = ev.clientY; ev.preventDefault(); }
+}, { passive: false });
+function endDrag(commit) {
+  if (!drag) return;
+  const d = drag; drag = null;
+  cancelAnimationFrame(d.raf);
+  try { d.grip.releasePointerCapture(d.pointerId); } catch {}
+  d.rows.forEach((r) => { r.style.transform = ''; });
+  d.li.classList.remove('dragging'); d.ul.classList.remove('sorting');
+  if (commit && d.to !== d.from) {
+    // show the new order straight away; the state update re-renders with the same result
+    d.ul.insertBefore(d.li, d.rows[d.to + (d.to > d.from ? 1 : 0)] || null);
+    act({ type: 'reorder', target: d.id, to: d.to });
+  } else if (d.stale) render();
+}
+document.addEventListener('pointerup', (ev) => { if (drag && ev.pointerId === drag.pointerId) endDrag(true); });
+document.addEventListener('pointercancel', (ev) => { if (drag && ev.pointerId === drag.pointerId) endDrag(false); });
+document.addEventListener('contextmenu', (e) => { if (e.target.closest && e.target.closest('[data-drag]')) e.preventDefault(); });
+// keyboard fallback: arrows on the handle
+document.addEventListener('keydown', (ev) => {
+  const grip = ev.target.closest && ev.target.closest('[data-drag]');
+  if (!grip || (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown')) return;
+  ev.preventDefault();
+  ui.gripFocus = grip.dataset.drag;
+  act({ type: 'move', target: grip.dataset.drag, dir: ev.key === 'ArrowUp' ? -1 : 1 });
+});
 
 // ---------- back button ----------
 // The browser's Back button steps back inside the app instead of leaving it.

@@ -104,6 +104,16 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-weight: 600;
   display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 12px;
   background: var(--wood); border: 1px solid var(--line); min-height: 52px;
 }
+.players li { transition: transform .15s ease, box-shadow .15s ease; }
+.players li.dragging { transition: none; position: relative; z-index: 5; border-color: var(--gold); box-shadow: 0 10px 26px rgba(0, 0, 0, .55); }
+.players.sorting { user-select: none; -webkit-user-select: none; }
+.grip {
+  display: grid; place-items: center; flex: none; min-width: 44px; min-height: 44px; margin-inline: -4px;
+  color: var(--muted); font-size: 1.5rem; line-height: 1; cursor: grab; border-radius: 10px;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+}
+.grip:focus-visible { outline: 2px solid var(--gold); }
+.players li.dragging .grip { cursor: grabbing; color: var(--gold); }
 .players li.me { border-color: var(--gold); }
 .players li.out { opacity: .45; }
 .players li.out .pname { text-decoration: line-through; }

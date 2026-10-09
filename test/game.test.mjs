@@ -127,4 +127,18 @@ t('new round keeps players and switches godfather; takers rotate from new godfat
   assert.deepEqual(takers(s), ['p4', 'p5', 'p0', 'p1', 'p2']);
 });
 
+t('reorder moves a seat anywhere, host only, lobby only', () => {
+  let s = newTable('ABCD', 'p0', 'P0');
+  for (let i = 1; i < 6; i++) s = reduce(s, { type: 'join', by: 'p' + i, name: 'P' + i });
+  s = act(s, { type: 'reorder', by: 'p0', target: 'p4', to: 1 });
+  assert.deepEqual(s.order, ['p0', 'p4', 'p1', 'p2', 'p3', 'p5']);
+  s = act(s, { type: 'reorder', by: 'p0', target: 'p0', to: 99 }); // clamps to the end
+  assert.deepEqual(s.order, ['p4', 'p1', 'p2', 'p3', 'p5', 'p0']);
+  s = act(s, { type: 'reorder', by: 'p0', target: 'p1', to: 1 }); // no-op
+  assert.deepEqual(s.order, ['p4', 'p1', 'p2', 'p3', 'p5', 'p0']);
+  assert.throws(() => reduce(s, { type: 'reorder', by: 'p2', target: 'p1', to: 0 }), /המארח/);
+  s = act(s, { type: 'start', by: 'p0', rng: () => 0.1 });
+  assert.throws(() => reduce(s, { type: 'reorder', by: 'p0', target: 'p1', to: 0 }), /בלובי/);
+});
+
 console.log(`\n${passed} tests passed`);
