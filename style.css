@@ -139,12 +139,15 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-weight: 600;
 .grip svg { width: 20px; height: 20px; pointer-events: none; }
 .grip:focus-visible { outline: 2px solid var(--gold); }
 body.seat-sorting, body.seat-sorting * { cursor: grab !important; } /* no cursor flicker when the pointer leaves the handle */
-.icon-slot { flex: none; width: 40px; height: 40px; } /* keeps the handle in the same column on rows without crown / kick buttons */
 .players li.me { border-color: var(--gold); }
 .players li.out { opacity: .45; }
 .players li.out .pname { text-decoration: line-through; }
 .seat { font-family: var(--font-display); width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; background: var(--wood-2); color: var(--muted); font-size: .9rem; flex: none; }
 .pname { flex: 1; min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+/* name + tags share one growing cell; tags drop under the name when there isn't room, so the name is never squeezed to a sliver */
+.who { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.who .pname { flex: 0 1 auto; max-width: 100%; overflow-wrap: break-word; }
+.players li > button { flex: none; }
 .tag { font-size: .75rem; font-weight: 800; padding: 2px 8px; border-radius: 999px; background: var(--wood-2); color: var(--muted); white-space: nowrap; }
 .tag.gold { background: var(--gold); color: var(--gold-ink); }
 .tag.red { background: var(--band); color: var(--gold-hi); }

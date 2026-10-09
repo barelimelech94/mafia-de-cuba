@@ -32,7 +32,6 @@ const I = {
   // drag handle: an SVG (not a text glyph), so it can't be selected and always renders the same
   grip: '<svg viewBox="0 0 20 20" aria-hidden="true"><g fill="currentColor"><circle cx="7" cy="4.5" r="1.8"/><circle cx="13" cy="4.5" r="1.8"/><circle cx="7" cy="10" r="1.8"/><circle cx="13" cy="10" r="1.8"/><circle cx="7" cy="15.5" r="1.8"/><circle cx="13" cy="15.5" r="1.8"/></g></svg>',
 };
-const SLOT = '<span class="icon-slot" aria-hidden="true"></span>';
 const TOKEN_ICON = { henchman: I.hat, fbi: I.badge, cia: I.badge, driver: I.wheel, cleaner: I.cross };
 const ROLE_ICON = { ...TOKEN_ICON, godfather: I.crown, thief: I.gem, urchin: I.cap };
 const TOKEN_NAME = { henchman: 'חייל נאמן', fbi: 'סוכן FBI', cia: 'סוכן CIA', driver: 'נהג', cleaner: 'המנקה' };
@@ -97,12 +96,15 @@ async function boot() {
 
 function openTable(c, joinIfNew = true) {
   if (unsub) unsub();
-  code = c; game = undefined; ui.joining = joinIfNew;
+  code = c; game = undefined; ui.joining = joinIfNew; ui.closedNotice = false;
   store.set('mdc.code', c, pidArea());
   let first = true;
-  unsub = sync.subscribe(c, (s) => {
+  unsub = sync.subscribe(c, (s, reason) => {
+    if (ui.closing) return; // we are the host, closing the table ourselves
     if (s === null) {
-      if (first) { toast('לא מצאתי שולחן עם הקוד הזה'); leaveTable(); }
+      // the host closed the table, or stayed unreachable too long: the table is gone for everyone
+      if (reason === 'closed' || !first) { tableClosed(); return; }
+      toast('לא מצאתי שולחן עם הקוד הזה'); leaveTable();
       return;
     }
     if (first) { ui.revealSeen = s.reveal ? s.reveal.seq : 0; first = false; }
@@ -121,12 +123,27 @@ async function autoJoin() {
   await act({ type: 'join', name, now: Date.now() });
 }
 
-function leaveTable(closeForAll = false) {
-  if (closeForAll && sync.forget && code) sync.forget(code);
+async function leaveTable(closeForAll = false) {
+  if (closeForAll && code) {
+    ui.closing = true;
+    try { if (sync.close) await sync.close(code); else if (sync.forget) sync.forget(code); }
+    catch (e) { console.error(e); }
+    finally { ui.closing = false; }
+  }
   if (unsub) unsub();
   unsub = null; code = null; game = null;
   store.set('mdc.code', null, pidArea());
   history.replaceState(null, '', location.pathname);
+  render();
+}
+
+// The host closed the table (or vanished): drop this player back to the home screen with a lasting notice.
+function tableClosed() {
+  if (unsub) unsub();
+  unsub = null; code = null; game = null;
+  store.set('mdc.code', null, pidArea());
+  history.replaceState(null, '', location.pathname);
+  Object.assign(ui, { rules: false, menu: false, accuseTarget: null, joining: false, pocket: false, boxOpen: false, pick: null, closedNotice: true });
   render();
 }
 
@@ -174,7 +191,7 @@ function render() {
   else if (game.phase === 'investigation') body = viewInvestigation();
   else body = viewEnd();
   const iHost = game.hostId === pid;
-  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש…' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
+  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש… אם הוא לא יחזור בעוד רגע, השולחן ייסגר.' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
   const test = sync.mode === 'local' ? '<p class="notice">מצב בדיקה: אין חיבור לשרת, אז כל ה"טלפונים" צריכים להיות לשוניות באותו דפדפן.</p>' : '';
   app.innerHTML = band() + offline + test + body;
   if (game.phase === 'lobby') drawQR();
@@ -201,6 +218,8 @@ function viewHome() {
     <h1>מאפיה דה קובה</h1>
     <p class="sub">הקופסה, היהלומים והטוקנים עוברים בטלפונים. החקירה נשארת סביב השולחן.</p>
   </div>
+  ${ui.closedNotice ? `<section><div class="banner" role="alert"><h2>השולחן נסגר</h2>
+    <p>המארח סגר את השולחן או שהתנתק, וזה סוף המשחק. אפשר לפתוח שולחן חדש או להצטרף לאחר.</p></div></section>` : ''}
   ${test}
   <section>
     <label class="field">השם שלך
@@ -264,11 +283,13 @@ function viewLobby() {
       id === s.godfatherId ? '<span class="tag gold">סנדק</span>' : '',
       id === s.hostId ? '<span class="tag">מארח</span>' : '',
     ].join('');
+    // Buttons first, drag handle last: the handle sits in the same spot on every row, and rows that lack the
+    // crown / kick button simply give that room back to the name instead of leaving an empty gap.
     const ctrls = isHost ? `
-      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">${I.grip}</span>
-      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : SLOT}
-      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : SLOT}` : '';
-    return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><span class="pname">${esc(p.name)}</span>${tags}${ctrls}</li>`;
+      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : ''}
+      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : ''}
+      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">${I.grip}</span>` : '';
+    return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><div class="who"><span class="pname">${esc(p.name)}</span>${tags}</div>${ctrls}</li>`;
   }).join('');
   const enough = n >= MIN_PLAYERS;
   return `
@@ -357,7 +378,7 @@ function seatList(s, opts = {}) {
     if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>`;
     if (isOut(s, id)) status += '<span class="tag red">מודח</span>';
     return `<li class="${id === pid ? 'me' : ''} ${isOut(s, id) ? 'out' : ''} ${s.phase === 'theft' && id === holder ? 'holder' : ''}">
-      <span class="seat num">${s.order.indexOf(id) + 1}</span><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</li>`;
+      <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="who"><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</div></li>`;
   }).join('');
   return `<ul class="players">${rows}</ul>`;
 }
@@ -463,7 +484,7 @@ function viewInvestigation() {
     const rows = takers(s).map((id) => {
       const outP = isOut(s, id);
       const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>` : '';
-      return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><span class="pname">${esc(nameOf(s, id))}</span>${j}
+      return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="who"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
         ${outP ? '<span class="tag red">מודח</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
     }).join('');
     return `<section>
@@ -685,7 +706,7 @@ document.addEventListener('click', async (ev) => {
     case 'menu': ui.menu = true; return renderOverlay();
     case 'closeSheet': ui.rules = false; ui.menu = false; return renderOverlay();
     case 'leave': ui.menu = false; ui.joining = false; return leaveTable();
-    case 'closeTable': ui.menu = false; ui.joining = false; return leaveTable(true);
+    case 'closeTable': ui.menu = false; ui.joining = false; renderOverlay(); return leaveTable(true);
     case 'rename': { const v = ($('#rename').value || '').trim().slice(0, 16); if (!v) return; store.set('mdc.name', v, pidArea()); ui.menu = false; await act({ type: 'rename', name: v }); return render(); }
     case 'abort': ui.menu = false; renderOverlay(); return act({ type: 'abort' });
     case 'copy': {

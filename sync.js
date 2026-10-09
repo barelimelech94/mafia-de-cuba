@@ -41,10 +41,18 @@ function P2PSync() {
     });
   }
 
+  // A player whose host stays unreachable this long is told the table is closed.
+  // Long enough to ride out a Wi-Fi blip or the host reloading the page, short enough not to leave people hanging.
+  const GRACE_MS = 10000;
+  const SILENT_MS = 6000; // the host pings every 2s; this long without any message counts as a lost connection
+
   function closeSession() {
     if (!session) return;
     session.closed = true;
     clearTimeout(session.timer);
+    clearTimeout(session.dropTimer);
+    clearInterval(session.pinger);
+    clearInterval(session.watch);
     try { session.peer && session.peer.destroy(); } catch {}
     session = null;
   }
@@ -88,13 +96,25 @@ function P2PSync() {
     };
     setTimeout(() => cb(ses.state), 0);
     claim();
+    // heartbeat: lets players tell "host is gone" from "host is just quiet"
+    ses.pinger = setInterval(() => ses.conns.forEach((c) => { try { c.open && c.send({ t: 'ping' }); } catch {} }), 2000);
   }
 
   // ----- player side -----
   function startClient(code, cb, { resume }) {
-    const ses = { code, host: false, conn: null, pending: new Map(), cb, closed: false, peer: null, got: false, fails: 0 };
+    const ses = { code, host: false, conn: null, pending: new Map(), cb, closed: false, peer: null, got: false, fails: 0, lastSeen: Date.now(), dropTimer: null };
     session = ses;
-    const retry = (ms) => { if (!ses.closed) { clearTimeout(ses.timer); ses.timer = setTimeout(connect, ms); } };
+    // Host unreachable for GRACE_MS (twice that if we never reached it) → the table is closed for this player.
+    const markLost = () => {
+      if (ses.closed || ses.dropTimer) return;
+      ses.dropTimer = setTimeout(() => { if (!ses.closed) { ses.closed = true; cb(null, 'closed'); } }, ses.got ? GRACE_MS : GRACE_MS * 2);
+    };
+    const markOk = () => { clearTimeout(ses.dropTimer); ses.dropTimer = null; };
+    const retry = (ms) => { if (!ses.closed) { markLost(); clearTimeout(ses.timer); ses.timer = setTimeout(connect, ms); } };
+    // a connection that looks open but has gone silent is as good as lost: drop it so the normal reconnect path runs
+    ses.watch = setInterval(() => {
+      if (ses.conn && ses.conn.open && Date.now() - ses.lastSeen > SILENT_MS) { try { ses.conn.close(); } catch {} }
+    }, 1000);
     const connect = async () => {
       if (ses.closed) return;
       try {
@@ -112,9 +132,14 @@ function P2PSync() {
         if (ses.closed) return;
         const c = ses.peer.connect(PREFIX + code, { reliable: true, serialization: 'json' });
         const openTimer = setTimeout(() => { if (!c.open) { try { c.close(); } catch {} retry(500); } }, 9000);
-        c.on('open', () => { clearTimeout(openTimer); ses.conn = c; ses.fails = 0; setConnected(true); });
+        c.on('open', () => { clearTimeout(openTimer); ses.conn = c; ses.fails = 0; ses.lastSeen = Date.now(); markOk(); setConnected(true); });
         c.on('data', (d) => {
           if (!d) return;
+          ses.lastSeen = Date.now();
+          if (d.t === 'closed') { // the host closed the table on purpose: no waiting, no retrying
+            if (!ses.closed) { ses.closed = true; markOk(); cb(null, 'closed'); }
+            return;
+          }
           if (d.t === 'state') { ses.got = true; cb(normalize(d.s)); }
           if (d.t === 'ack') { const p = ses.pending.get(d.id); if (p) { ses.pending.delete(d.id); d.err ? p.reject(new GameError(d.err)) : p.resolve(); } }
         });
@@ -160,6 +185,14 @@ function P2PSync() {
       await session.send(action);
     },
     forget(code) { try { localStorage.removeItem(hostKey(code)); } catch {} },
+    // Host closes the table for everyone: tell the players first, then forget the saved table.
+    async close(code) {
+      if (session && session.host && session.code === code) {
+        session.conns.forEach((c) => { try { c.open && c.send({ t: 'closed' }); } catch {} });
+        await new Promise((r) => setTimeout(r, 350)); // let the message go out before the connection is torn down
+      }
+      try { localStorage.removeItem(hostKey(code)); } catch {}
+    },
     onConnection(fn) { connListeners.add(fn); fn(connected); return () => connListeners.delete(fn); },
   };
 }
