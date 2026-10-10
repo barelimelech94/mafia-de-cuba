@@ -174,6 +174,10 @@ function tick() {
   }
   if (ui.revealAt && Date.now() - ui.revealAt > 1400 && !$('#overlay').dataset.shown) renderOverlay();
 }
+// A join that failed once (host busy, link blinked) is retried on its own until the player is seated.
+setInterval(() => {
+  if (code && game && ui.joining && !game.players[pid] && game.phase === 'lobby' && !ui.busy && Date.now() - (ui.joinTry || 0) > 2500) { ui.joinTry = Date.now(); autoJoin(); }
+}, 1000);
 
 // ---------- render ----------
 function render() {

@@ -43,8 +43,12 @@ function P2PSync() {
 
   // A player whose host stays unreachable this long is told the table is closed.
   // Long enough to ride out a Wi-Fi blip or the host reloading the page, short enough not to leave people hanging.
-  const GRACE_MS = 10000;
-  const SILENT_MS = 6000; // the host pings every 2s; this long without any message counts as a lost connection
+  // The public signalling server and mobile networks blip all the time, so be patient: a player is only told the
+  // table is gone after the host has been unreachable this long (an intentional close is still instant).
+  const GRACE_MS = 45000;
+  const FIRST_CONNECT_MS = 30000; // never reached the host at all (bad network / blocked): give up after this
+  const NOT_FOUND_TRIES = 6;      // "no such peer" answers, 2.5s apart, before we believe the code is wrong
+  const SILENT_MS = 12000; // the host pings every 2s; this long without any message counts as a lost connection
 
   function closeSession() {
     if (!session) return;
@@ -53,6 +57,8 @@ function P2PSync() {
     clearTimeout(session.dropTimer);
     clearInterval(session.pinger);
     clearInterval(session.watch);
+    clearInterval(session.watchdog);
+    if (session.cleanup) session.cleanup();
     try { session.peer && session.peer.destroy(); } catch {}
     session = null;
   }
@@ -88,6 +94,9 @@ function P2PSync() {
         ses.peer.on('disconnected', () => { if (!ses.closed) { setConnected(false); setTimeout(() => { try { ses.peer.reconnect(); } catch {} }, 1500); } });
         ses.peer.on('open', () => setConnected(true));
         ses.peer.on('error', (e) => console.warn('host peer', e.type));
+        // the peer was destroyed (server kicked us, fatal network error): claim the table id again instead of staying dead
+        const dead = ses.peer;
+        ses.peer.on('close', () => { if (ses.closed || ses.peer !== dead) return; setConnected(false); ses.peer = null; clearTimeout(ses.timer); ses.timer = setTimeout(claim, 1500); });
       } catch (e) {
         // ID still held by our previous page load (reload) or the network is down: keep trying.
         setConnected(false);
@@ -96,6 +105,17 @@ function P2PSync() {
     };
     setTimeout(() => cb(ses.state), 0);
     claim();
+    // Watchdog: a dropped signalling socket is retried until it works, and coming back to the app (unlock, other app,
+    // network back) checks the connection straight away instead of waiting.
+    ses.heal = () => {
+      if (ses.closed || !ses.peer) return;
+      if (ses.peer.destroyed) { const p = ses.peer; ses.peer = null; clearTimeout(ses.timer); ses.timer = setTimeout(claim, 500); void p; return; }
+      if (ses.peer.disconnected) { setConnected(false); try { ses.peer.reconnect(); } catch {} }
+    };
+    const onWake = () => { if (document.visibilityState !== 'hidden') ses.heal(); };
+    document.addEventListener('visibilitychange', onWake); window.addEventListener('online', ses.heal);
+    ses.cleanup = () => { document.removeEventListener('visibilitychange', onWake); window.removeEventListener('online', ses.heal); };
+    ses.watchdog = setInterval(ses.heal, 3000);
     // heartbeat: lets players tell "host is gone" from "host is just quiet"
     ses.pinger = setInterval(() => ses.conns.forEach((c) => { try { c.open && c.send({ t: 'ping' }); } catch {} }), 2000);
   }
@@ -107,23 +127,36 @@ function P2PSync() {
     // Host unreachable for GRACE_MS (twice that if we never reached it) → the table is closed for this player.
     const markLost = () => {
       if (ses.closed || ses.dropTimer) return;
-      ses.dropTimer = setTimeout(() => { if (!ses.closed) { ses.closed = true; cb(null, 'closed'); } }, ses.got ? GRACE_MS : GRACE_MS * 2);
+      ses.dropTimer = setTimeout(() => { if (!ses.closed) { ses.closed = true; cb(null, 'closed'); } }, ses.got ? GRACE_MS : FIRST_CONNECT_MS);
     };
     const markOk = () => { clearTimeout(ses.dropTimer); ses.dropTimer = null; };
     const retry = (ms) => { if (!ses.closed) { markLost(); clearTimeout(ses.timer); ses.timer = setTimeout(connect, ms); } };
     // a connection that looks open but has gone silent is as good as lost: drop it so the normal reconnect path runs
+    let beat = 0;
     ses.watch = setInterval(() => {
       if (ses.conn && ses.conn.open && Date.now() - ses.lastSeen > SILENT_MS) { try { ses.conn.close(); } catch {} }
+      // our own link to the signalling server dropped (or the peer died): get it back, don't wait for luck
+      if (++beat % 3 === 0 && !(ses.conn && ses.conn.open) && ses.peer) {
+        if (ses.peer.destroyed) { if (!ses.connecting) { clearTimeout(ses.timer); markLost(); connect(); } }
+        else if (ses.peer.disconnected) { try { ses.peer.reconnect(); } catch {} }
+      }
     }, 1000);
+    const kick = () => { if (ses.closed || (ses.conn && ses.conn.open) || ses.connecting) return; clearTimeout(ses.timer); markLost(); connect(); };
+    const onWake = () => { if (document.visibilityState !== 'hidden') kick(); };
+    document.addEventListener('visibilitychange', onWake); window.addEventListener('online', kick);
+    ses.cleanup = () => { document.removeEventListener('visibilitychange', onWake); window.removeEventListener('online', kick); };
     const connect = async () => {
       if (ses.closed) return;
       try {
         if (!ses.peer || ses.peer.destroyed) {
-          ses.peer = await openPeer();
+          ses.connecting = true;
+          try {
+            ses.peer = await openPeer();
+          } finally { ses.connecting = false; }
           ses.peer.on('error', (e) => {
             if (e.type === 'peer-unavailable') {
               ses.fails += 1;
-              if (!ses.got && !resume && ses.fails >= 2) { ses.closed = true; cb(null); return; }
+              if (!ses.got && !resume && ses.fails >= NOT_FOUND_TRIES) { ses.closed = true; cb(null); return; }
               setConnected(false); retry(2500);
             } else if (e.type === 'network' || e.type === 'server-error' || e.type === 'socket-error') { setConnected(false); retry(3000); }
           });
