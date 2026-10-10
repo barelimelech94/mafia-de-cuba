@@ -202,6 +202,15 @@ body.seat-sorting, body.seat-sorting * { cursor: grab !important; } /* no cursor
 .pocket.open { border-style: solid; border-color: var(--gold); background: #33201a; }
 .pocket .role { font-family: var(--font-display); font-size: 1.4rem; color: var(--gold-hi); display: flex; align-items: center; gap: 8px; }
 .pocket .role svg { width: 28px; height: 28px; }
+.rolecard { display: flex; align-items: center; gap: 12px; }
+.rolecard > .grow { display: flex; flex-direction: column; gap: 6px; }
+
+/* Role portraits */
+.roleimg { display: block; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 12px; background: var(--wood-2); pointer-events: none; }
+.roleimg.card { width: 104px; flex: none; border: 1.5px solid var(--gold); }
+.roleimg.big { width: min(200px, 56%); margin-inline: auto; border: 2px solid var(--gold); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
+.roleimg.tiny { width: 28px; border-radius: 5px; border: 1px solid var(--line); flex: none; }
+.rolecell { display: inline-flex; align-items: center; gap: 8px; }
 
 .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .stat { background: var(--wood); border: 1px solid var(--line); border-radius: 12px; padding: 10px; text-align: center; }

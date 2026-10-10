@@ -36,6 +36,10 @@ const TOKEN_ICON = { henchman: I.hat, fbi: I.badge, cia: I.badge, driver: I.whee
 const ROLE_ICON = { ...TOKEN_ICON, godfather: I.crown, thief: I.gem, urchin: I.cap };
 const TOKEN_NAME = { henchman: 'חייל נאמן', fbi: 'סוכן FBI', cia: 'סוכן CIA', driver: 'נהג', cleaner: 'המנקה' };
 const ROLE_NAME = { ...TOKEN_NAME, godfather: 'הסנדק', thief: 'גנב', urchin: 'ילד רחוב' };
+// one portrait per role (roles/<role>.webp), preloaded so the pocket peek and the reveal never wait on the network
+const ROLE_IMG = Object.fromEntries(Object.keys(ROLE_NAME).map((r) => [r, `roles/${r}.webp`]));
+const roleImg = (r, cls = '') => ROLE_IMG[r] ? `<img class="roleimg ${cls}" src="${ROLE_IMG[r]}" alt="${ROLE_NAME[r]}" draggable="false" decoding="async">` : '';
+Object.values(ROLE_IMG).forEach((src) => { const im = new Image(); im.src = src; });
 
 function roleGoal(s, id) {
   const r = roleOf(s, id);
@@ -386,7 +390,7 @@ function seatList(s, opts = {}) {
 // ----- pocket -----
 function pocket(s) {
   if (pid === s.godfatherId) {
-    return `<div class="pocket open"><span class="role">${I.crown}הסנדק</span><p class="small">בכיס שלך: <b class="num">${s.hidden}</b> יהלומים שהחבאת. ${roleGoal(s, pid)}</p></div>`;
+    return `<div class="pocket open"><div class="rolecard">${roleImg('godfather', 'card')}<div class="grow"><span class="role">${I.crown}הסנדק</span><p class="small">בכיס שלך: <b class="num">${s.hidden}</b> יהלומים שהחבאת. ${roleGoal(s, pid)}</p></div></div></div>`;
   }
   const take = s.takes[pid];
   if (!take) return '';
@@ -396,10 +400,13 @@ function pocket(s) {
   }
   const r = roleOf(s, pid);
   const jokers = s.jokersGiven[pid] ? `<p class="small">${I.bottle.replace('<svg', '<svg width="18" height="18" style="vertical-align:-4px"')} ${s.jokersGiven[pid]} וויסקי מהסנדק</p>` : '';
-  return `<div class="pocket open" data-hold="pocket" role="button" tabindex="0">
-    <span class="role">${ROLE_ICON[r]}${ROLE_NAME[r]}${r === 'thief' ? ` · <span class="num">${take.n}</span> יהלומים` : ''}</span>
-    ${r === 'thief' ? gems(take.n) : ''}
-    <p class="small">${roleGoal(s, pid)}</p>${jokers}
+  return `<div class="pocket open" data-hold="pocket" role="button" tabindex="0"><div class="rolecard">
+    ${roleImg(r, 'card')}
+    <div class="grow">
+      <span class="role">${ROLE_ICON[r]}${ROLE_NAME[r]}${r === 'thief' ? ` · <span class="num">${take.n}</span> יהלומים` : ''}</span>
+      ${r === 'thief' ? gems(take.n) : ''}
+      <p class="small">${roleGoal(s, pid)}</p>${jokers}
+    </div></div>
   </div>`;
 }
 
@@ -556,7 +563,7 @@ function viewEnd() {
     const take = id === s.godfatherId ? `החביא ${s.hidden}` : t && t.kind === 'diamonds' ? `${t.n} יהלומים` : '';
     return `<tr class="${winners.has(id) ? 'win' : ''}"><td class="num">${s.order.indexOf(id) + 1}</td>
       <td><b>${esc(nameOf(s, id))}</b>${isOut(s, id) ? ' <span class="tag red">מודח</span>' : ''}</td>
-      <td>${role ? ROLE_NAME[role] : '—'}</td><td class="num">${esc(take)}</td><td>${winners.has(id) ? '<span class="tag ok">ניצח</span>' : ''}</td></tr>`;
+      <td>${role ? `<span class="rolecell">${roleImg(role, 'tiny')}${ROLE_NAME[role]}</span>` : '—'}</td><td class="num">${esc(take)}</td><td>${winners.has(id) ? '<span class="tag ok">ניצח</span>' : ''}</td></tr>`;
   }).join('');
   const isHost = pid === s.hostId;
   const order = [...r.winners, ...s.order.filter((id) => !winners.has(id))];
@@ -639,6 +646,7 @@ function revealSheet() {
   }
   $('#overlay').dataset.shown = '1';
   return `<div class="sheet accuse" role="dialog" aria-modal="true"><p class="muted">${who}</p>
+    ${e.role ? roleImg(e.role, 'big') : ''}
     <p class="verdict ${cls}">${v}</p><p>${sub}</p>
     <button class="primary block" data-act="closeReveal">המשך</button></div>`;
 }
