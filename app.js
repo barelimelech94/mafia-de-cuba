@@ -483,9 +483,10 @@ function viewInvestigation() {
     const left = s.box.diamonds;
     const rows = takers(s).map((id) => {
       const outP = isOut(s, id);
+      const cleared = !!s.jokersGiven[id]; // already accused and found innocent: accusing again is not allowed
       const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} וויסקי</span>` : '';
       return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
-        ${outP ? '<span class="tag red">מודח</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
+        ${outP ? '<span class="tag red">מודח</span>' : cleared ? '<span class="tag">נוקה</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
     }).join('');
     return `<section>
       <p class="eyebrow">החקירה · אתה הסנדק</p>

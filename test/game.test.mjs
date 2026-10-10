@@ -45,6 +45,7 @@ t('godfather wins after recovering everything; henchman + driver behind him win'
   assert.equal(s.stolen, 7);
   s = act(s, { type: 'accuse', by: 'p0', target: 'p3' }); // innocent → joker
   assert.equal(s.jokers, 1); assert.equal(s.jokersGiven.p3, 1); assert.equal(s.reveal.outcome, 'innocent');
+  assert.throws(() => reduce(s, { type: 'accuse', by: 'p0', target: 'p3' }), /כבר הואשם/); // innocent can't be accused twice
   s = act(s, { type: 'accuse', by: 'p0', target: 'p2' });
   assert.equal(s.recovered, 3); assert.equal(s.eliminated.p2, 'thief');
   assert.throws(() => reduce(s, { type: 'accuse', by: 'p0', target: 'p2' }));

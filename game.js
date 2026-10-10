@@ -239,6 +239,7 @@ export function reduce(state, action) {
       const t = p.target;
       if (!s.players[t] || t === s.godfatherId) fail('אי אפשר להאשים את השחקן הזה');
       if (isOut(s, t)) fail('השחקן הזה כבר הודח');
+      if (s.jokersGiven[t]) fail('השחקן הזה כבר הואשם בטעות וקיבל וויסקי');
       s.seq += 1;
       s.accusation = { target: t, seq: s.seq };
       if (!s.settings.cleaner) resolve(s, null);
