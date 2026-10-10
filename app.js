@@ -469,7 +469,7 @@ function boxView(s) {
     <h3>מה לוקחים? חובה לקחת משהו</h3>
     ${box.diamonds > 0 ? `<div class="stack" style="gap:8px">
       <button class="block ${dChosen ? 'chosen' : ''}" data-act="pickDiamonds">${I.gem.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px"')} יהלומים (לפחות אחד)</button>
-      ${dChosen ? `<div class="stepper"><button data-act="pickN" data-d="-1" aria-label="פחות">−</button><span class="val">${ui.pickN}</span><button data-act="pickN" data-d="1" aria-label="יותר">+</button></div>` : ''}
+      ${dChosen ? `<div class="slider"><span class="val" id="pickval">${ui.pickN}</span>${box.diamonds > 1 ? `<input type="range" id="pickrange" dir="ltr" min="1" max="${box.diamonds}" step="1" value="${ui.pickN}" style="--p:${(ui.pickN - 1) / (box.diamonds - 1) * 100}%" aria-label="כמה יהלומים לקחת"><div class="ends num" dir="ltr"><span>1</span><span>${box.diamonds}</span></div>` : ''}</div>` : ''}
     </div>` : ''}
     ${tokenBtns ? `<p class="small muted">או טוקן אחד:</p><div class="choice">${tokenBtns}</div>` : ''}
     ${last ? `<button class="block ghost ${pick && pick.kind === 'nothing' ? 'chosen' : ''}" data-act="pickNothing">${I.cap.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px;color:var(--muted)"')} לא לקחת כלום (ילד רחוב)</button>
@@ -739,7 +739,6 @@ document.addEventListener('click', async (ev) => {
     case 'openBox': ui.boxOpen = true; return render();
     case 'bag': return act({ type: 'bag', token: el.dataset.token || null });
     case 'pickDiamonds': ui.pick = { kind: 'diamonds' }; ui.pickN = Math.max(1, Math.min(ui.pickN, game.box.diamonds)); return render();
-    case 'pickN': ui.pickN = Math.max(1, Math.min(game.box.diamonds, ui.pickN + +el.dataset.d)); return render();
     case 'pickToken': ui.pick = { kind: 'token', token: el.dataset.token }; return render();
     case 'pickNothing': ui.pick = { kind: 'nothing' }; return render();
     case 'take': {
@@ -755,6 +754,15 @@ document.addEventListener('click', async (ev) => {
     case 'closeReveal': ui.revealSeen = game.reveal ? game.reveal.seq : ui.revealSeen; ui.revealAt = 0; return render();
     case 'newRound': return act({ type: 'newRound', godfatherId: ui.newGf });
   }
+});
+document.addEventListener('input', (ev) => {
+  const r = ev.target;
+  if (r.id !== 'pickrange' || !game || !game.box) return;
+  const n = Math.max(1, Math.min(game.box.diamonds, +r.value || 1));
+  ui.pickN = n;
+  r.style.setProperty('--p', game.box.diamonds > 1 ? `${(n - 1) / (game.box.diamonds - 1) * 100}%` : '0%');
+  const v = $('#pickval'); if (v) v.textContent = n;
+  const b = $('[data-act="take"]'); if (b) b.textContent = `קח ${n} ${n === 1 ? 'יהלום' : 'יהלומים'} והעבר`;
 });
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'newgf') ui.newGf = ev.target.value;
