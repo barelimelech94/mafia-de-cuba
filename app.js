@@ -40,13 +40,13 @@ const ROLE_NAME = { ...TOKEN_NAME, godfather: 'הסנדק', thief: 'גנב', urc
 function roleGoal(s, id) {
   const r = roleOf(s, id);
   switch (r) {
-    case 'godfather': return 'להחזיר את כל היהלומים שנגנבו. כל האשמה של מי שלא גנב עולה לך ג׳וקר, ואם נגמרו הג׳וקרים, אתה מודח.';
+    case 'godfather': return 'להחזיר את כל היהלומים שנגנבו. כל האשמה של מי שלא גנב עולה לך וויסקי, ואם נגמר הוויסקי, אתה מודח.';
     case 'thief': return 'לא להיתפס. אם הסנדק מודח, הגנב עם הכי הרבה יהלומים שעוד במשחק מנצח.';
     case 'henchman': return 'לעזור לסנדק לתפוס את הגנבים. אתה מנצח אם הסנדק מחזיר את כל היהלומים.';
     case 'fbi': case 'cia': return 'לגרום לסנדק להאשים אותך. אם הוא מאשים אותך, אתה מנצח לבד.';
     case 'driver': return `אתה מנצח אם השחקן שמימינך מנצח: ${esc(nameOf(s, rightNeighbor(s, id)))}.`;
     case 'cleaner': return 'אתה בצד של הסנדק. כשהסנדק מאשים מישהו, אפשר ללחוץ POW לפני החשיפה: על סוכן אתה מנצח לבד, ועל כל אחד אחר שניכם מודחים.';
-    case 'urchin': return 'אין לך כלום בכיס, אבל אף אחד לא יודע. תמשוך חשד כדי שהסנדק יבזבז ג׳וקרים. אתה מנצח אם גנב מנצח.';
+    case 'urchin': return 'אין לך כלום בכיס, אבל אף אחד לא יודע. תמשוך חשד כדי שהסנדק יבזבז וויסקי. אתה מנצח אם גנב מנצח.';
     default: return '';
   }
 }
@@ -315,7 +315,7 @@ function viewLobby() {
     <h3>הגדרות</h3>
     <label class="switch"><span>לשחק עם המנקה <span class="small muted">(לא מומלץ במשחקים הראשונים)</span></span>
       <input type="checkbox" id="cleaner" data-act="cleaner" ${s.settings.cleaner ? 'checked' : ''} ${n === 5 ? 'disabled' : ''}></label>
-    <div class="switch"><span>ג׳וקרים לסנדק${n === 5 ? ' <span class="small muted">(במשחק של 5 אין ג׳וקרים)</span>' : ''}</span>
+    <div class="switch"><span>וויסקי לסנדק${n === 5 ? ' <span class="small muted">(במשחק של 5 אין וויסקי)</span>' : ''}</span>
       <div class="row"><button class="icon" data-act="jokers" data-d="-1" aria-label="פחות">−</button><b class="num" style="min-width:1.5em;text-align:center">${s.settings.jokers}</b><button class="icon" data-act="jokers" data-d="1" aria-label="יותר">+</button></div></div>
   </section>` : ''}
   <section>
@@ -375,7 +375,7 @@ function seatList(s, opts = {}) {
     if (id === s.godfatherId) status = '<span class="tag gold">סנדק</span>';
     else if (s.phase === 'theft' && id === holder) status = '<span class="tag red">הקופסה אצלו</span>';
     else if (s.phase === 'theft' && tIdx < s.turn) status = '<span class="tag">העביר</span>';
-    if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>`;
+    if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${s.jokersGiven[id]} וויסקי</span>`;
     if (isOut(s, id)) status += '<span class="tag red">מודח</span>';
     return `<li class="${id === pid ? 'me' : ''} ${isOut(s, id) ? 'out' : ''} ${s.phase === 'theft' && id === holder ? 'holder' : ''}">
       <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</div></li>`;
@@ -395,7 +395,7 @@ function pocket(s) {
       <b>הכיס שלי</b><span class="small muted">החזק את האצבע כדי להציץ. שימו לב לשכנים.</span></div>`;
   }
   const r = roleOf(s, pid);
-  const jokers = s.jokersGiven[pid] ? `<p class="small">${I.bottle.replace('<svg', '<svg width="18" height="18" style="vertical-align:-4px"')} ${s.jokersGiven[pid]} ג׳וקר מהסנדק</p>` : '';
+  const jokers = s.jokersGiven[pid] ? `<p class="small">${I.bottle.replace('<svg', '<svg width="18" height="18" style="vertical-align:-4px"')} ${s.jokersGiven[pid]} וויסקי מהסנדק</p>` : '';
   return `<div class="pocket open" data-hold="pocket" role="button" tabindex="0">
     <span class="role">${ROLE_ICON[r]}${ROLE_NAME[r]}${r === 'thief' ? ` · <span class="num">${take.n}</span> יהלומים` : ''}</span>
     ${r === 'thief' ? gems(take.n) : ''}
@@ -475,7 +475,7 @@ function viewInvestigation() {
   const out = isOut(s, pid);
   const publicStats = `<div class="stats">
       <div class="stat"><b class="num">${s.recovered}</b><span>יהלומים הוחזרו</span></div>
-      <div class="stat"><b class="num">${s.jokers}</b><span>ג׳וקרים לסנדק</span></div>
+      <div class="stat"><b class="num">${s.jokers}</b><span>וויסקי לסנדק</span></div>
       <div class="stat"><b class="num">${s.order.filter((id) => isOut(s, id)).length}</b><span>מודחים</span></div></div>`;
   const logHtml = s.log.length ? `<section><h3>מה קרה עד עכשיו</h3><ul class="log">${s.log.slice().reverse().map(logLine).join('')}</ul></section>` : '';
 
@@ -483,7 +483,7 @@ function viewInvestigation() {
     const left = s.box.diamonds;
     const rows = takers(s).map((id) => {
       const outP = isOut(s, id);
-      const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} ג׳וקר</span>` : '';
+      const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} וויסקי</span>` : '';
       return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
         ${outP ? '<span class="tag red">מודח</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
     }).join('');
@@ -492,7 +492,7 @@ function viewInvestigation() {
       <div class="stats">
         <div class="stat"><b class="num">${s.stolen}</b><span>נגנבו</span></div>
         <div class="stat"><b class="num">${s.recovered}</b><span>הוחזרו</span></div>
-        <div class="stat"><b class="num">${s.jokers}</b><span>ג׳וקרים</span></div>
+        <div class="stat"><b class="num">${s.jokers}</b><span>וויסקי</span></div>
       </div>
       <div class="box"><span class="label">מה חזר בקופסה</span>
         <div class="gems"><span class="count num">${left}</span>${I.gem}</div>
@@ -528,9 +528,9 @@ function logLine(e) {
   const s = game, who = esc(nameOf(s, e.target));
   switch (e.outcome) {
     case 'thief': return `<li class="thief">${who} נתפס עם ${e.n} יהלומים והודח.</li>`;
-    case 'innocent': return `<li class="innocent">${who} הואשם, אבל ${e.role === 'urchin' ? 'הכיסים שלו ריקים' : `הוא ${ROLE_NAME[e.role]}`}. קיבל ג׳וקר.</li>`;
+    case 'innocent': return `<li class="innocent">${who} הואשם, אבל ${e.role === 'urchin' ? 'הכיסים שלו ריקים' : `הוא ${ROLE_NAME[e.role]}`}. קיבל וויסקי.</li>`;
     case 'agent': return `<li class="bad">${who} הוא ${ROLE_NAME[e.role]}.</li>`;
-    case 'godfatherOut': return `<li class="bad">${who} נקי, ולסנדק נגמרו הג׳וקרים.</li>`;
+    case 'godfatherOut': return `<li class="bad">${who} נקי, ולסנדק נגמר הוויסקי.</li>`;
     case 'pow': return `<li class="bad">POW! ${esc(nameOf(s, e.by))} ירה ב${who} (${e.role === 'thief' ? `גנב, ${e.n} יהלומים חזרו` : e.role === 'urchin' ? 'כיסים ריקים' : ROLE_NAME[e.role]}). שניהם הודחו.</li>`;
     case 'powAgent': return `<li class="bad">POW! ${esc(nameOf(s, e.by))} חיסל את ${who}, ${ROLE_NAME[e.role]}.</li>`;
     default: return '';
@@ -594,7 +594,7 @@ function renderOverlay() {
 
 function confirmAccuseSheet() {
   const s = game, id = ui.accuseTarget;
-  const cost = s.jokers > 0 ? `אם הוא לא גנב, תצטרך לתת לו ג׳וקר (נשארו לך ${s.jokers}). אם הוא סוכן, הפסדת.` : 'לא נשארו לך ג׳וקרים: אם הוא לא גנב, אתה מודח. אם הוא סוכן, הפסדת.';
+  const cost = s.jokers > 0 ? `אם הוא לא גנב, תצטרך לתת לו וויסקי (נשארו לך ${s.jokers}). אם הוא סוכן, הפסדת.` : 'לא נשאר לך וויסקי: אם הוא לא גנב, אתה מודח. אם הוא סוכן, הפסדת.';
   return `<div class="sheet accuse" role="dialog" aria-modal="true">
     <p class="who">${esc(nameOf(s, id))}</p>
     <p class="muted small">${cost}</p>
@@ -630,9 +630,9 @@ function revealSheet() {
   let v = '', cls = 'gold', sub = '';
   switch (e.outcome) {
     case 'thief': v = `גנב! ${e.n} יהלומים`; sub = `${who} מודח. היהלומים חזרו לסנדק.`; break;
-    case 'innocent': v = e.role === 'urchin' ? 'הכיסים ריקים' : `${who} הוא ${ROLE_NAME[e.role]}`; cls = 'good'; sub = `הסנדק טעה ונותן ל${who} ג׳וקר. נשארו לו ${e.jokersLeft}.`; break;
+    case 'innocent': v = e.role === 'urchin' ? 'הכיסים ריקים' : `${who} הוא ${ROLE_NAME[e.role]}`; cls = 'good'; sub = `הסנדק טעה ונותן ל${who} וויסקי. נשארו לו ${e.jokersLeft}.`; break;
     case 'agent': v = `${ROLE_NAME[e.role]}!`; cls = 'bad'; sub = `${who} היה סוכן סמוי. הסוכן מנצח.`; break;
-    case 'godfatherOut': v = 'הסנדק מודח'; cls = 'bad'; sub = `${who} ${e.role === 'urchin' ? 'עם כיסים ריקים' : `הוא ${ROLE_NAME[e.role]}`}, ולסנדק אין יותר ג׳וקרים.`; break;
+    case 'godfatherOut': v = 'הסנדק מודח'; cls = 'bad'; sub = `${who} ${e.role === 'urchin' ? 'עם כיסים ריקים' : `הוא ${ROLE_NAME[e.role]}`}, ולסנדק אין יותר וויסקי.`; break;
     case 'pow': v = 'POW!'; cls = 'bad'; sub = `${by} ירה ב${who}${e.role === 'thief' ? `, שהיה גנב עם ${e.n} יהלומים. היהלומים חזרו לסנדק` : `, שהיה ${e.role === 'urchin' ? 'ילד רחוב' : ROLE_NAME[e.role]}`}. שניהם מודחים.`; break;
     case 'powAgent': v = 'POW! סוכן חוסל'; cls = 'gold'; sub = `${by} הוא המנקה, ו${who} היה ${ROLE_NAME[e.role]}. המנקה מנצח לבד.`; break;
   }
@@ -675,7 +675,7 @@ function rulesSheet() {
       <li>הסנדק שואל את מי שהוא רוצה, באיזה סדר שהוא רוצה. מותר לשקר, לשתוק ולסלף.</li>
       <li>כשהוא בטוח, הוא מאשים: "רוקן את הכיסים!".</li>
       <li><b>גנב:</b> היהלומים חוזרים לסנדק, והגנב מודח ואסור לו לדבר.</li>
-      <li><b>מי שלא גנב:</b> הסנדק נותן לו ג׳וקר. אם לסנדק נגמרו הג׳וקרים, הסנדק מודח.</li>
+      <li><b>מי שלא גנב:</b> הסנדק נותן לו וויסקי. אם לסנדק נגמר הוויסקי, הסנדק מודח.</li>
       <li><b>סוכן FBI או CIA:</b> המשחק נגמר והסוכן מנצח.</li>
     </ul>
     <h3>מי מנצח</h3>
@@ -685,7 +685,7 @@ function rulesSheet() {
       <li><b>גנב:</b> אם הסנדק הודח, הגנב שעוד במשחק עם הכי הרבה יהלומים מנצח. בתיקו, כולם מנצחים.</li>
       <li><b>ילד רחוב:</b> אם גנב מנצח.</li>
       <li><b>נהג:</b> אם השחקן שמימינו מנצח.</li>
-      <li><b>המנקה (אופציונלי):</b> בצד של הסנדק. כשהסנדק מאשים, הוא יכול לצעוק POW! לפני החשיפה. על סוכן הוא מנצח לבד. על כל אחד אחר, שניהם מודחים: גנב מחזיר את היהלומים, ומי שלא גנב לא מקבל ג׳וקר.</li>
+      <li><b>המנקה (אופציונלי):</b> בצד של הסנדק. כשהסנדק מאשים, הוא יכול לצעוק POW! לפני החשיפה. על סוכן הוא מנצח לבד. על כל אחד אחר, שניהם מודחים: גנב מחזיר את היהלומים, ומי שלא גנב לא מקבל וויסקי.</li>
     </ul>
     <h3>שולחן עם הטלפונים</h3>
     <ul><li>המארח פותח שולחן, וכולם נכנסים עם הקוד או הברקוד.</li><li>סדרו את המקומות בלובי לפי הישיבה האמיתית.</li><li>"הכיס שלי": החזיקו את האצבע כדי להציץ במה שלקחתם.</li></ul>
