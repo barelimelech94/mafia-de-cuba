@@ -78,8 +78,67 @@ const ui = {
   revealSeen: 0, revealAt: 0, accSeq: 0, accAt: 0, resolvedSent: 0,
   newGf: null, joining: false, busy: false,
 };
+const ui0 = { ...ui };
 
 function newPid() { return 'p' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4); }
+
+// ---------- solo debug mode: ?solo=N ----------
+// One tab plays a whole table. N players (default 6) are seated up front; a bar at the bottom switches
+// which phone you are looking at. State lives in LocalSync, so nothing else about the app changes.
+// Keys 1-9 and 0 switch seats. The restart button reloads into a fresh table.
+let soloIds = null;
+const soloUi = {};
+const SOLO_NAMES = ['אלי', 'בני', 'גיל', 'דנה', 'הילה', 'ויקי', 'זאב', 'חנה', 'טל', 'יעל', 'כרמל', 'לוי'];
+async function bootSolo(n) {
+  n = Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, n));
+  const c = '0000';
+  try { localStorage.removeItem(`mdc.table.${c}`); } catch {}
+  soloIds = Array.from({ length: n }, (_, i) => `solo${i + 1}`);
+  await sync.create(c, newTable(c, soloIds[0], SOLO_NAMES[0]));
+  for (let i = 1; i < n; i++) await sync.dispatch(c, { type: 'join', name: SOLO_NAMES[i], now: Date.now() + i, by: soloIds[i] });
+  pid = soloIds[0];
+  document.body.classList.add('solo');
+  const bar = document.createElement('nav');
+  bar.id = 'solo';
+  document.body.appendChild(bar);
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.restart) location.reload();
+    else soloSwitch(b.dataset.pid);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.closest('input, textarea') || e.ctrlKey || e.metaKey || e.altKey) return;
+    const i = e.key === '0' ? 9 : +e.key - 1;
+    if (soloIds[i]) soloSwitch(soloIds[i]);
+  });
+  openTable(c, false);
+  setInterval(tick, 250);
+  setInterval(renderSoloBar, 250);
+  renderSoloBar();
+}
+function soloSwitch(id) {
+  if (!soloIds || id === pid || !soloIds.includes(id)) return;
+  soloUi[pid] = { ...ui };
+  pid = id;
+  for (const k of Object.keys(ui)) delete ui[k];
+  Object.assign(ui, ui0, soloUi[id] || { revealSeen: game?.reveal?.seq || 0 });
+  render();
+  renderSoloBar();
+}
+let soloSig = '';
+function renderSoloBar() {
+  const bar = $('#solo');
+  if (!bar || !game) return;
+  const holder = currentTaker(game);
+  const sig = [pid, game.phase, game.godfatherId, holder, ...soloIds.map((id) => nameOf(game, id))].join('|');
+  if (sig === soloSig) return;
+  soloSig = sig;
+  bar.innerHTML = soloIds.map((id, i) => {
+    const tags = (id === game.godfatherId ? ' 👑' : '') + (id === holder ? ' ●' : '');
+    return `<button data-pid="${id}" class="${id === pid ? 'on' : ''}" title="${i + 1 > 9 ? 0 : i + 1}">${esc(nameOf(game, id))}${tags}</button>`;
+  }).join('') + '<button data-restart="1" title="שולחן חדש">↻</button>';
+}
 
 // ---------- boot ----------
 async function boot() {
@@ -91,6 +150,7 @@ async function boot() {
   sync.onConnection((c) => { connected = c; render(); });
 
   const params = new URLSearchParams(location.search);
+  if (params.has('solo') && sync.mode === 'local') { await bootSolo(+params.get('solo') || 6); return; }
   const urlCode = (params.get('t') || '').replace(/\D/g, '').slice(0, 4);
   const saved = store.get('mdc.code', pidArea());
   if (saved && (!urlCode || urlCode === saved)) openTable(saved, false);
@@ -200,7 +260,7 @@ function render() {
   else body = viewEnd();
   const iHost = game.hostId === pid;
   const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש… אם הוא לא יחזור בעוד רגע, השולחן ייסגר.' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
-  const test = sync.mode === 'local' ? '<p class="notice">מצב בדיקה: אין חיבור לשרת, אז כל ה"טלפונים" צריכים להיות לשוניות באותו דפדפן.</p>' : '';
+  const test = sync.mode === 'local' && !soloIds ? '<p class="notice">מצב בדיקה: אין חיבור לשרת, אז כל ה"טלפונים" צריכים להיות לשוניות באותו דפדפן.</p>' : '';
   app.innerHTML = band() + offline + test + body;
   if (game.phase === 'lobby') drawQR();
   renderOverlay();

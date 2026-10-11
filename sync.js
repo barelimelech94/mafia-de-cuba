@@ -8,7 +8,7 @@ const strip = (o) => JSON.parse(JSON.stringify(o)); // drop undefined (Firebase 
 
 export async function createSync(firebaseConfig) {
   if (firebaseConfig && firebaseConfig.databaseURL) return FirebaseSync(firebaseConfig);
-  if (new URLSearchParams(location.search).has('local') || !window.Peer) return LocalSync();
+  if ((q => q.has('local') || q.has('solo'))(new URLSearchParams(location.search)) || !window.Peer) return LocalSync();
   return P2PSync();
 }
 
