@@ -1,4 +1,4 @@
-// Mafia de Cuba — pure game logic. No DOM, no network.
+// Game logic for the Mafia de Cuba companion app — pure. No DOM, no network.
 // reduce(state, action) returns a NEW state, or throws GameError when the action is not allowed.
 
 export const TOTAL_DIAMONDS = 15;

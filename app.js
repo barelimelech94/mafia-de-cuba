@@ -142,9 +142,9 @@ function renderSoloBar() {
 
 // ---------- boot ----------
 async function boot() {
-  $('#app').innerHTML = '<div class="hero"><h1>מאפיה דה קובה</h1><p class="muted">טוען…</p></div>';
+  $('#app').innerHTML = '<div class="hero"><h1>הקופסה</h1><p class="muted">טוען…</p></div>';
   try { sync = await createSync(firebaseConfig); }
-  catch (e) { console.error(e); $('#app').innerHTML = '<div class="hero"><h1>מאפיה דה קובה</h1><p>לא הצלחתי להתחבר לשרת. רעננו את הדף.</p></div>'; return; }
+  catch (e) { console.error(e); $('#app').innerHTML = '<div class="hero"><h1>הקופסה</h1><p>לא הצלחתי להתחבר לשרת. רעננו את הדף.</p></div>'; return; }
   pid = store.get('mdc.pid', pidArea()) || newPid();
   store.set('mdc.pid', pid, pidArea());
   sync.onConnection((c) => { connected = c; render(); });
@@ -269,7 +269,7 @@ function render() {
 
 function band() {
   return `<header class="band">
-    <span class="title">מאפיה דה קובה</span>
+    <span class="title">הקופסה</span>
     ${code ? `<span class="code num" aria-label="קוד שולחן">${esc(code)}</span>` : ''}
     <button data-act="rules">חוקים</button>
     ${code ? '<button data-act="menu" aria-label="תפריט">⋯</button>' : ''}
@@ -283,8 +283,8 @@ function viewHome() {
   return `${band()}
   <div class="hero">
     <span class="hero-band">הוואנה · 1958</span>
-    <h1>מאפיה דה קובה</h1>
-    <p class="sub">הקופסה, היהלומים והטוקנים עוברים בטלפונים. החקירה נשארת סביב השולחן.</p>
+    <h1>הקופסה</h1>
+    <p class="sub">אפליקציה נלווית ל־Mafia de Cuba: הקופסה, היהלומים והטוקנים עוברים בטלפונים. החקירה נשארת סביב השולחן.</p>
   </div>
   ${ui.closedNotice ? `<section><div class="banner" role="alert"><h2>השולחן נסגר</h2>
     <p>המארח סגר את השולחן או שהתנתק, וזה סוף המשחק. אפשר לפתוח שולחן חדש או להצטרף לאחר.</p></div></section>` : ''}
@@ -300,7 +300,8 @@ function viewHome() {
     <button class="primary block" data-act="join">הצטרף</button>
     <div class="or">או</div>
     <button class="block" data-act="create">פתח שולחן חדש</button>
-  </section>`;
+  </section>
+  <p class="disclaimer">אפליקציה לא רשמית, ללא קשר ל־Lui-même. נדרש עותק של המשחק Mafia de Cuba.</p>`;
 }
 
 function readName() {

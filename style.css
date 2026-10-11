@@ -117,6 +117,7 @@ label.field { display: flex; flex-direction: column; gap: 6px; font-weight: 600;
 .hero { padding-block: 40px 8px; text-align: center; display: flex; flex-direction: column; gap: 10px; align-items: center; }
 .hero h1 { font-size: 2.6rem; color: var(--gold-hi); }
 .hero .sub { color: var(--muted); max-width: 30ch; }
+.disclaimer { margin-top: 28px; text-align: center; font-size: .78rem; color: var(--muted); opacity: .8; }
 .hero-band { display: inline-block; background: var(--band); color: var(--gold-hi); font-family: var(--font-display); padding: 2px 14px; border-radius: 4px; border: 2px solid var(--gold); font-size: .95rem; }
 .or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: .9rem; }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--line); }
