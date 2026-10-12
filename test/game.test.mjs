@@ -163,7 +163,7 @@ t('chat: only seated players, no empty text, length and history are capped', () 
   assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: '   ' }), /ריקה/);
   s = act(s, { type: 'chat', by: 'p0', text: 'x'.repeat(500), now: 1 });
   assert.equal(s.chat[0].text.length, 200);
-  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 3600 }); // so the cap, not the expiry, trims the list
+  s = act(s, { type: 'chatSettings', by: 'p0', ttl: 3600 }); // so the cap, not the expiry, trims the list
   for (let i = 0; i < 60; i++) s = act(s, { type: 'chat', by: 'p0', text: 'm' + i, now: 10_000 + i * 2000 });
   assert.equal(s.chat.length, 50);
   assert.equal(s.chat[49].text, 'm59');
@@ -171,12 +171,12 @@ t('chat: only seated players, no empty text, length and history are capped', () 
 
 t('chat: only the host changes the TTL, any phase, clamped; it applies to existing messages', () => {
   let s = table(6);
-  assert.throws(() => reduce(s, { type: 'chatTtl', by: 'p1', seconds: 30 }), /המארח/);
-  assert.throws(() => reduce(s, { type: 'chatTtl', by: 'p0', seconds: NaN }), /לא תקין/);
-  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 30 }); // mid-round (phase is 'setup')
+  assert.throws(() => reduce(s, { type: 'chatSettings', by: 'p1', ttl: 30 }), /המארח/);
+  assert.throws(() => reduce(s, { type: 'chatSettings', by: 'p0', ttl: NaN }), /לא תקין/);
+  s = act(s, { type: 'chatSettings', by: 'p0', ttl: 30 }); // mid-round (phase is 'setup')
   assert.equal(s.settings.chatTtl, 30);
-  assert.equal(act(s, { type: 'chatTtl', by: 'p0', seconds: 1 }).settings.chatTtl, 5);
-  assert.equal(act(s, { type: 'chatTtl', by: 'p0', seconds: 99999 }).settings.chatTtl, 3600);
+  assert.equal(act(s, { type: 'chatSettings', by: 'p0', ttl: 1 }).settings.chatTtl, 5);
+  assert.equal(act(s, { type: 'chatSettings', by: 'p0', ttl: 99999 }).settings.chatTtl, 3600);
   s = act(s, { type: 'chat', by: 'p2', text: 'a', now: 0 });
   s = act(s, { type: 'chat', by: 'p2', text: 'b', now: 31_000 }); // 31s > the new 30s TTL
   assert.deepEqual(s.chat.map((m) => m.text), ['b']);
@@ -207,16 +207,16 @@ t('chat: by default a player can send one message per 2s; others are not slowed 
 
 t('chat cooldown: only the host changes it, any phase, clamped to 0..3600; 0 means no limit', () => {
   let s = table(6);
-  assert.throws(() => reduce(s, { type: 'chatCooldown', by: 'p1', seconds: 5 }), /המארח/);
-  assert.throws(() => reduce(s, { type: 'chatCooldown', by: 'p0', seconds: NaN }), /לא תקין/);
-  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 10 }); // mid-round (phase is 'setup')
+  assert.throws(() => reduce(s, { type: 'chatSettings', by: 'p1', cooldown: 5 }), /המארח/);
+  assert.throws(() => reduce(s, { type: 'chatSettings', by: 'p0', cooldown: NaN }), /לא תקין/);
+  s = act(s, { type: 'chatSettings', by: 'p0', cooldown: 10 }); // mid-round (phase is 'setup')
   assert.equal(s.settings.chatCooldown, 10);
-  assert.equal(act(s, { type: 'chatCooldown', by: 'p0', seconds: -3 }).settings.chatCooldown, 0);
-  assert.equal(act(s, { type: 'chatCooldown', by: 'p0', seconds: 99999 }).settings.chatCooldown, 3600);
+  assert.equal(act(s, { type: 'chatSettings', by: 'p0', cooldown: -3 }).settings.chatCooldown, 0);
+  assert.equal(act(s, { type: 'chatSettings', by: 'p0', cooldown: 99999 }).settings.chatCooldown, 3600);
   s = act(s, { type: 'chat', by: 'p2', text: 'a', now: 0 });
   assert.throws(() => reduce(s, { type: 'chat', by: 'p2', text: 'b', now: 9_999 }), /חכו רגע/);
   s = act(s, { type: 'chat', by: 'p2', text: 'b', now: 10_000 });
-  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 0 });
+  s = act(s, { type: 'chatSettings', by: 'p0', cooldown: 0 });
   s = act(s, { type: 'chat', by: 'p2', text: 'c', now: 10_000 }); // same instant, allowed
   assert.deepEqual(s.chat.map((m) => m.text), ['a', 'b', 'c']);
 });
@@ -224,14 +224,23 @@ t('chat cooldown: only the host changes it, any phase, clamped to 0..3600; 0 mea
 t('chat cooldown holds even when it is longer than the TTL (the message itself is already gone)', () => {
   let s = newTable('ABCD', 'p0', 'P0');
   s = reduce(s, { type: 'join', by: 'p1', name: 'P1' });
-  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 5 });
-  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 30 });
+  s = act(s, { type: 'chatSettings', by: 'p0', ttl: 5 });
+  s = act(s, { type: 'chatSettings', by: 'p0', cooldown: 30 });
   s = act(s, { type: 'chat', by: 'p0', text: 'a', now: 0 });
   s = act(s, { type: 'chat', by: 'p1', text: 'x', now: 10_000 }); // this send drops the expired 'a' from the list
   assert.deepEqual(s.chat.map((m) => m.text), ['x']);
   assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'b', now: 20_000 }), /חכו רגע/);
   s = act(s, { type: 'chat', by: 'p0', text: 'b', now: 30_000 });
   assert.deepEqual(s.chat.map((m) => m.text), ['b']);
+});
+
+t('chat settings: saved together; one invalid field means nothing changes; a missing field is left alone', () => {
+  let s = newTable('ABCD', 'p0', 'P0');
+  s = act(s, { type: 'chatSettings', by: 'p0', ttl: 120, cooldown: 7 });
+  assert.equal(s.settings.chatTtl, 120); assert.equal(s.settings.chatCooldown, 7);
+  assert.throws(() => reduce(s, { type: 'chatSettings', by: 'p0', ttl: 30, cooldown: NaN }), /לא תקין/);
+  s = act(s, { type: 'chatSettings', by: 'p0', cooldown: 3 }); // ttl not sent: unchanged
+  assert.equal(s.settings.chatTtl, 120); assert.equal(s.settings.chatCooldown, 3);
 });
 
 console.log(`\n${passed} tests passed`);

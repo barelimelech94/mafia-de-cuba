@@ -189,16 +189,13 @@ export function reduce(state, action) {
       s.chat = [...s.chat.filter((m) => at - m.at < ttl), { id: s.chatSeq, by, text, at }].slice(-MAX_CHAT_KEPT);
       return s;
     }
-    case 'chatTtl': {
-      if (!isHost) fail('רק המארח משנה את זמן ההודעות');
-      if (!Number.isFinite(p.seconds)) fail('זמן לא תקין');
-      s.settings.chatTtl = Math.max(MIN_CHAT_TTL, Math.min(MAX_CHAT_TTL, Math.round(p.seconds)));
-      return s;
-    }
-    case 'chatCooldown': {
-      if (!isHost) fail('רק המארח משנה את ההשהיה בין הודעות');
-      if (!Number.isFinite(p.seconds)) fail('זמן לא תקין');
-      s.settings.chatCooldown = Math.max(MIN_CHAT_COOLDOWN, Math.min(MAX_CHAT_COOLDOWN, Math.round(p.seconds)));
+    // Host's chat settings, saved together from the menu. Each field is optional; if any given field is invalid,
+    // nothing is changed.
+    case 'chatSettings': {
+      if (!isHost) fail('רק המארח משנה את הגדרות הצ\'אט');
+      if ([p.ttl, p.cooldown].some((v) => v !== undefined && !Number.isFinite(v))) fail('זמן לא תקין');
+      if (p.ttl !== undefined) s.settings.chatTtl = Math.max(MIN_CHAT_TTL, Math.min(MAX_CHAT_TTL, Math.round(p.ttl)));
+      if (p.cooldown !== undefined) s.settings.chatCooldown = Math.max(MIN_CHAT_COOLDOWN, Math.min(MAX_CHAT_COOLDOWN, Math.round(p.cooldown)));
       return s;
     }
     case 'start': {

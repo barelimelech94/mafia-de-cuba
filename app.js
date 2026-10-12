@@ -726,16 +726,41 @@ function menuSheet() {
   return `<div class="sheet" role="dialog" aria-modal="true">
     <h2>תפריט</h2>
     <label class="field">השם שלך<input id="rename" maxlength="16" value="${esc(store.get('mdc.name', pidArea()) || '')}"></label>
-    <button data-act="rename">שמור שם</button>
     ${isHost ? `<label class="field">זמן חיים להודעות בצ'אט (בשניות)<input id="chattl" type="number" inputmode="numeric" min="${MIN_CHAT_TTL}" max="${MAX_CHAT_TTL}" value="${game.settings.chatTtl}"></label>
-    <button data-act="chatTtl">עדכן זמן</button>
-    <label class="field">השהייה בין הודעות של אותו שחקן (בשניות, 0 = בלי הגבלה)<input id="chatcd" type="number" inputmode="numeric" min="${MIN_CHAT_COOLDOWN}" max="${MAX_CHAT_COOLDOWN}" value="${game.settings.chatCooldown}"></label>
-    <button data-act="chatCooldown">עדכן השהייה</button>` : ''}
+    <label class="field">השהייה בין הודעות של אותו שחקן (בשניות, 0 = בלי הגבלה)<input id="chatcd" type="number" inputmode="numeric" min="${MIN_CHAT_COOLDOWN}" max="${MAX_CHAT_COOLDOWN}" value="${game.settings.chatCooldown}"></label>` : ''}
+    <button class="primary" data-act="saveMenu">שמור</button>
     ${isHost && mid ? '<button class="danger" data-act="abort">בטל את הסיבוב וחזור ללובי</button>' : ''}
     ${isHost && sync.mode === 'p2p'
       ? '<p class="small muted">אתה המארח: הטלפון שלך מחזיק את השולחן. אם תסגור אותו, המשחק ייגמר לכולם.</p><button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>'
       : (isHost && sync.mode === 'server' ? '<button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>' : '') + '<button class="ghost" data-act="leave">צא מהשולחן</button>'}
-    <button class="primary" data-act="closeSheet">סגור</button></div>`;
+    <button class="ghost" data-act="closeSheet">סגור</button></div>`;
+}
+
+// One save for everything in the menu: the name, and for the host the chat settings. Everything is checked first,
+// and only what changed is sent. If a send fails, the menu stays open with the typed values.
+async function saveMenu() {
+  const name = ($('#rename')?.value || '').trim().slice(0, 16);
+  if (!name) { toast('צריך שם'); $('#rename')?.focus(); return; }
+  const me = game && game.players[pid];
+  const isHost = game && pid === game.hostId;
+  const jobs = [];
+  if (isHost) {
+    const field = (id, min, max, label) => {
+      const raw = ($(id)?.value || '').trim(), v = Math.round(+raw);
+      if (raw === '' || !(v >= min && v <= max)) { toast(`${label} צריך להיות בין ${min} ל־${max} שניות`); $(id)?.focus(); return null; }
+      return v;
+    };
+    const ttl = field('#chattl', MIN_CHAT_TTL, MAX_CHAT_TTL, 'זמן החיים של ההודעות'); if (ttl === null) return;
+    const cooldown = field('#chatcd', MIN_CHAT_COOLDOWN, MAX_CHAT_COOLDOWN, 'ההשהייה בין הודעות'); if (cooldown === null) return;
+    if (ttl !== game.settings.chatTtl || cooldown !== game.settings.chatCooldown) jobs.push({ type: 'chatSettings', ttl, cooldown });
+  }
+  const renamed = name !== (store.get('mdc.name', pidArea()) || '') || (me && me.name !== name);
+  store.set('mdc.name', name, pidArea());
+  if (renamed && me) jobs.unshift({ type: 'rename', name });
+  for (const a of jobs) if (!(await act(a))) return;
+  ui.menu = false;
+  render();
+  if (renamed || jobs.length) toast('נשמר');
 }
 
 function rulesSheet() {
@@ -860,21 +885,9 @@ document.addEventListener('click', async (ev) => {
     case 'closeSheet': ui.rules = false; ui.menu = false; return renderOverlay();
     case 'leave': ui.menu = false; ui.joining = false; return leaveTable();
     case 'closeTable': ui.menu = false; ui.joining = false; renderOverlay(); return leaveTable(true);
-    case 'rename': { const v = ($('#rename').value || '').trim().slice(0, 16); if (!v) return; store.set('mdc.name', v, pidArea()); ui.menu = false; await act({ type: 'rename', name: v }); return render(); }
+    case 'saveMenu': return saveMenu();
     case 'abort': ui.menu = false; renderOverlay(); return act({ type: 'abort' });
     case 'chatToggle': ui.chatOpen = !ui.chatOpen; if (ui.chatOpen) ui.chatSeen = game ? game.chatSeq : 0; renderChat(); if (ui.chatOpen) $('#chatinput').focus(); return;
-    case 'chatTtl': {
-      const sec = Math.round(+($('#chattl').value));
-      if (!(sec >= MIN_CHAT_TTL && sec <= MAX_CHAT_TTL)) { toast(`הזמן צריך להיות בין ${MIN_CHAT_TTL} ל־${MAX_CHAT_TTL} שניות`); return; }
-      if (await act({ type: 'chatTtl', seconds: sec })) { ui.menu = false; renderOverlay(); toast(`ההודעות יימחקו אחרי ${fmtTtl(sec)}`); }
-      return;
-    }
-    case 'chatCooldown': {
-      const sec = Math.round(+($('#chatcd').value));
-      if (!(sec >= MIN_CHAT_COOLDOWN && sec <= MAX_CHAT_COOLDOWN)) { toast(`ההשהייה צריכה להיות בין ${MIN_CHAT_COOLDOWN} ל־${MAX_CHAT_COOLDOWN} שניות`); return; }
-      if (await act({ type: 'chatCooldown', seconds: sec })) { ui.menu = false; renderOverlay(); toast(sec ? `אפשר לשלוח הודעה כל ${fmtTtl(sec)}` : 'אין הגבלה על קצב ההודעות'); }
-      return;
-    }
     case 'copy': {
       const link = el.dataset.link;
       try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); }
@@ -922,6 +935,7 @@ document.addEventListener('change', (ev) => {
 });
 document.addEventListener('keydown', (ev) => {
   if (ev.key !== 'Enter') return;
+  if (['rename', 'chattl', 'chatcd'].includes(ev.target.id)) { ev.preventDefault(); saveMenu(); return; }
   if (ev.target.id === 'joincode' || (ev.target.id === 'name' && !code)) joinTable();
 });
 
