@@ -7,9 +7,89 @@ import { reduce, normalize, GameError } from './game.js';
 const strip = (o) => JSON.parse(JSON.stringify(o)); // drop undefined (Firebase rejects it)
 
 export async function createSync(firebaseConfig) {
+  const q = new URLSearchParams(location.search);
+  const debugLocal = q.has('local') || q.has('solo');
+  // Served by the local server (server/server.js, no internet needed): it injects window.MDC_WS.
+  if (window.MDC_WS && !debugLocal) return ServerSync(window.MDC_WS);
   if (firebaseConfig && firebaseConfig.databaseURL) return FirebaseSync(firebaseConfig);
-  if ((q => q.has('local') || q.has('solo'))(new URLSearchParams(location.search)) || !window.Peer) return LocalSync();
+  if (debugLocal || !window.Peer) return LocalSync();
   return P2PSync();
+}
+
+// ---------- Local server: one laptop on the Wi-Fi keeps the tables, phones connect over a WebSocket ----------
+function ServerSync(path) {
+  const REQ_MS = 8000;   // a request with no answer after this long fails
+  const SILENT_MS = 10000; // the server pings every 3s; this long without any message counts as a lost connection
+  const connListeners = new Set();
+  const subs = new Map();     // code -> Set<callback>
+  const pending = new Map();  // request id -> { resolve, reject, timer }
+  let ws = null, open = false, connected = true, lastSeen = Date.now(), retryTimer = null;
+  const setConnected = (v) => { if (connected !== v) { connected = v; connListeners.forEach((fn) => fn(v)); } };
+  const lost = () => new GameError('אין חיבור לשרת. מנסה להתחבר מחדש…');
+
+  function connect() {
+    clearTimeout(retryTimer);
+    if (ws && ws.readyState <= 1) return; // already connecting or open
+    const sock = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + path);
+    ws = sock;
+    sock.onopen = () => {
+      if (ws !== sock) return;
+      open = true; lastSeen = Date.now(); setConnected(true);
+      for (const code of subs.keys()) sock.send(JSON.stringify({ t: 'sub', code }));
+    };
+    sock.onmessage = (e) => {
+      lastSeen = Date.now();
+      let m; try { m = JSON.parse(e.data); } catch { return; }
+      if (m.t === 'state') (subs.get(m.code) || []).forEach((cb) => cb(m.s ? normalize(m.s) : null, m.why));
+      else if (m.t === 'res') {
+        const p = pending.get(m.id); if (!p) return;
+        pending.delete(m.id); clearTimeout(p.timer);
+        m.ok ? p.resolve(m) : p.reject(new GameError(m.err || 'שגיאה'));
+      }
+    };
+    const down = () => {
+      if (ws !== sock) return;
+      open = false; ws = null; setConnected(false);
+      pending.forEach((p) => { clearTimeout(p.timer); p.reject(lost()); }); pending.clear();
+      retryTimer = setTimeout(connect, 1500);
+    };
+    sock.onclose = down;
+    sock.onerror = () => { try { sock.close(); } catch {} };
+  }
+  // an open socket that has gone quiet is as good as lost: close it so the normal reconnect path runs
+  setInterval(() => { if (open && Date.now() - lastSeen > SILENT_MS && ws) { try { ws.close(); } catch {} } }, 1000);
+  const kick = () => { if (!open) connect(); };
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState !== 'hidden') kick(); });
+  window.addEventListener('online', kick);
+  connect();
+
+  const request = (msg) => new Promise((resolve, reject) => {
+    if (!open) { reject(lost()); return; }
+    const id = Math.random().toString(36).slice(2);
+    const timer = setTimeout(() => { pending.delete(id); reject(new GameError('השרת לא ענה. נסו שוב.')); }, REQ_MS);
+    pending.set(id, { resolve, reject, timer });
+    ws.send(JSON.stringify({ ...msg, id }));
+  });
+
+  return {
+    mode: 'server',
+    async exists(code) { return (await request({ t: 'exists', code })).v; },
+    async create(code, state) { return (await request({ t: 'create', code, state: strip(state) })).v; },
+    subscribe(code, cb) {
+      if (!subs.has(code)) subs.set(code, new Set());
+      subs.get(code).add(cb);
+      if (open) ws.send(JSON.stringify({ t: 'sub', code })); // else it is sent as soon as the socket opens
+      return () => {
+        const set = subs.get(code); if (!set) return;
+        set.delete(cb);
+        if (!set.size) { subs.delete(code); if (open) ws.send(JSON.stringify({ t: 'unsub', code })); }
+      };
+    },
+    async dispatch(code, action) { return normalize((await request({ t: 'act', code, a: strip(action) })).s); },
+    async close(code) { await request({ t: 'close', code }); },
+    forget() {},
+    onConnection(fn) { connListeners.add(fn); fn(connected); return () => connListeners.delete(fn); },
+  };
 }
 
 // ---------- Peer-to-peer: the host's phone keeps the table and runs the reducer ----------

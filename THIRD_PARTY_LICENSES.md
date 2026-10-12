@@ -28,3 +28,10 @@ THE SOFTWARE.
 ## QR Code Generator (`vendor/qrcode.js`)
 Copyright (c) 2009 Kazuhiko Arase — MIT License (same terms as above).
 "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+
+## Suez One and Assistant fonts (`vendor/fonts/`)
+Copies of the fonts as packaged by Fontsource (@fontsource/suez-one, @fontsource-variable/assistant), used so the app looks the same without internet.
+SIL Open Font License 1.1. Full texts: `vendor/fonts/LICENSE-SuezOne.txt` and `vendor/fonts/LICENSE-Assistant.txt`.
+
+## ws (npm dependency of `server/server.js`)
+https://github.com/websockets/ws, MIT License, Copyright (c) websockets contributors.

@@ -259,7 +259,7 @@ function render() {
   else if (game.phase === 'investigation') body = viewInvestigation();
   else body = viewEnd();
   const iHost = game.hostId === pid;
-  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש… אם הוא לא יחזור בעוד רגע, השולחן ייסגר.' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
+  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש… אם הוא לא יחזור בעוד רגע, השולחן ייסגר.' : sync.mode === 'server' ? 'אין חיבור לשרת המקומי. בדקו שהטלפון על אותה רשת Wi-Fi. המשחק ימשיך כשהחיבור יחזור.' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
   const test = sync.mode === 'local' && !soloIds ? '<p class="notice">מצב בדיקה: אין חיבור לשרת, אז כל ה"טלפונים" צריכים להיות לשוניות באותו דפדפן.</p>' : '';
   app.innerHTML = band() + offline + test + body;
   if (game.phase === 'lobby') drawQR();
@@ -726,7 +726,7 @@ function menuSheet() {
     ${isHost && mid ? '<button class="danger" data-act="abort">בטל את הסיבוב וחזור ללובי</button>' : ''}
     ${isHost && sync.mode === 'p2p'
       ? '<p class="small muted">אתה המארח: הטלפון שלך מחזיק את השולחן. אם תסגור אותו, המשחק ייגמר לכולם.</p><button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>'
-      : '<button class="ghost" data-act="leave">צא מהשולחן</button>'}
+      : (isHost && sync.mode === 'server' ? '<button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>' : '') + '<button class="ghost" data-act="leave">צא מהשולחן</button>'}
     <button class="primary" data-act="closeSheet">סגור</button></div>`;
 }
 
