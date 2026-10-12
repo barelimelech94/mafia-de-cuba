@@ -142,4 +142,53 @@ t('reorder moves a seat anywhere, host only, lobby only', () => {
   assert.throws(() => reduce(s, { type: 'reorder', by: 'p0', target: 'p1', to: 0 }), /בלובי/);
 });
 
+t('chat: default TTL is 60s and messages expire by it', () => {
+  let s = newTable('ABCD', 'p0', 'P0', 1000);
+  s = reduce(s, { type: 'join', by: 'p1', name: 'P1' });
+  assert.equal(s.settings.chatTtl, 60);
+  s = act(s, { type: 'chat', by: 'p1', text: '  שלום  ', now: 10_000 });
+  assert.equal(s.chat.length, 1);
+  assert.equal(s.chat[0].text, 'שלום'); // trimmed
+  assert.equal(s.chat[0].by, 'p1');
+  s = act(s, { type: 'chat', by: 'p0', text: 'עוד אחת', now: 69_000 }); // 59s later: the first is still alive
+  assert.equal(s.chat.length, 2);
+  s = act(s, { type: 'chat', by: 'p0', text: 'שלישית', now: 71_000 }); // 61s after the first: it is dropped
+  assert.deepEqual(s.chat.map((m) => m.text), ['עוד אחת', 'שלישית']);
+  assert.deepEqual(s.chat.map((m) => m.id), [2, 3]); // ids never repeat
+});
+
+t('chat: only seated players, no empty text, length and history are capped', () => {
+  let s = newTable('ABCD', 'p0', 'P0');
+  assert.throws(() => reduce(s, { type: 'chat', by: 'ghost', text: 'היי' }), /לא בשולחן/);
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: '   ' }), /ריקה/);
+  s = act(s, { type: 'chat', by: 'p0', text: 'x'.repeat(500), now: 1 });
+  assert.equal(s.chat[0].text.length, 200);
+  for (let i = 0; i < 60; i++) s = act(s, { type: 'chat', by: 'p0', text: 'm' + i, now: 2 + i });
+  assert.equal(s.chat.length, 50);
+  assert.equal(s.chat[49].text, 'm59');
+});
+
+t('chat: only the host changes the TTL, any phase, clamped; it applies to existing messages', () => {
+  let s = table(6);
+  assert.throws(() => reduce(s, { type: 'chatTtl', by: 'p1', seconds: 30 }), /המארח/);
+  assert.throws(() => reduce(s, { type: 'chatTtl', by: 'p0', seconds: NaN }), /לא תקין/);
+  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 30 }); // mid-round (phase is 'setup')
+  assert.equal(s.settings.chatTtl, 30);
+  assert.equal(act(s, { type: 'chatTtl', by: 'p0', seconds: 1 }).settings.chatTtl, 5);
+  assert.equal(act(s, { type: 'chatTtl', by: 'p0', seconds: 99999 }).settings.chatTtl, 3600);
+  s = act(s, { type: 'chat', by: 'p2', text: 'a', now: 0 });
+  s = act(s, { type: 'chat', by: 'p2', text: 'b', now: 31_000 }); // 31s > the new 30s TTL
+  assert.deepEqual(s.chat.map((m) => m.text), ['b']);
+});
+
+t('chat: tables without chat fields (old saves, Firebase dropping empties) get defaults', () => {
+  const old = JSON.parse(JSON.stringify(newTable('ABCD', 'p0', 'P0')));
+  delete old.chat; delete old.chatSeq; delete old.settings.chatTtl;
+  const s = normalize(old);
+  assert.deepEqual(s.chat, []);
+  assert.equal(s.chatSeq, 0);
+  assert.equal(s.settings.chatTtl, 60);
+  assert.equal(act(s, { type: 'chat', by: 'p0', text: 'היי', now: 5 }).chat.length, 1);
+});
+
 console.log(`\n${passed} tests passed`);

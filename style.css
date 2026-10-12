@@ -42,7 +42,7 @@ body {
   padding-top: env(safe-area-inset-top, 0px);
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
-#app { max-width: 520px; margin: 0 auto; padding-inline: 16px; padding-block: 0 48px; }
+#app { max-width: 520px; margin: 0 auto; padding-inline: 16px; padding-block: 0 88px; }
 h1, h2, h3 { font-family: var(--font-display); font-weight: 400; margin: 0; text-wrap: balance; line-height: 1.2; }
 h1 { font-size: 2.1rem; }
 h2 { font-size: 1.45rem; }
@@ -277,3 +277,20 @@ body.solo { padding-bottom: 56px; }
 #solo { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); background: #120a06; border-top: 1px solid var(--line); direction: rtl; }
 #solo button { flex: none; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: .85rem; }
 #solo button.on { background: var(--gold, #d9ab52); color: #1d110c; border-color: transparent; font-weight: 700; }
+
+/* chat (outside #app, so a state update never wipes a half-typed message) */
+#chat { position: fixed; inset-inline: 0; bottom: 0; z-index: 15; pointer-events: none; padding-bottom: env(safe-area-inset-bottom, 0px); }
+body.solo #chat { bottom: 56px; }
+#chat > * { pointer-events: auto; }
+#chatbtn { position: absolute; bottom: 12px; inset-inline-end: 12px; min-height: 44px; padding: 8px 16px; border-radius: 999px; background: var(--wood-2); border-color: var(--gold); box-shadow: 0 4px 16px rgba(0,0,0,.5); }
+#chatbtn .dot { display: inline-block; width: 10px; height: 10px; margin-inline-start: 8px; border-radius: 50%; background: var(--danger); }
+#chatpanel { width: min(520px, 100%); margin: 0 auto; max-height: 60vh; display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; background: var(--wood); border: 2px solid var(--gold); border-bottom: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -8px 24px rgba(0,0,0,.5); }
+.chathead { display: flex; align-items: center; justify-content: space-between; }
+#chatlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 72px; flex: 1; }
+#chatlog li { display: flex; flex-direction: column; padding: 6px 10px; background: var(--wood-2); border-radius: 10px; border-inline-start: 3px solid var(--line); overflow-wrap: anywhere; }
+#chatlog li.me { border-inline-start-color: var(--gold); }
+#chatlog li b { font-size: .8rem; color: var(--gold-hi); }
+#chatlog li.empty { background: transparent; border: 0; align-items: center; }
+#chatform { display: flex; gap: 8px; }
+#chatform input { flex: 1; min-width: 0; }
+#chatform button { flex: none; }

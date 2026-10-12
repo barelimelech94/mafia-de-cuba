@@ -3,6 +3,7 @@ import { createSync } from './sync.js';
 import {
   newTable, takers, currentTaker, rightNeighbor, boxEmpty, roleOf, isOut, tokensFor,
   TOKEN_TYPES, AGENTS, MIN_PLAYERS, MAX_PLAYERS, GameError,
+  DEFAULT_CHAT_TTL, MIN_CHAT_TTL, MAX_CHAT_TTL,
 } from './game.js';
 
 // ---------- small utils ----------
@@ -76,7 +77,7 @@ const ui = {
   boxOpen: false, boxTurnKey: '', pick: null, pickN: 1, hideN: 0,
   pocket: false, accuseTarget: null, rules: false, menu: false,
   revealSeen: 0, revealAt: 0, accSeq: 0, accAt: 0, resolvedSent: 0,
-  newGf: null, joining: false, busy: false,
+  newGf: null, joining: false, busy: false, chatOpen: false, chatSeen: 0,
 };
 const ui0 = { ...ui };
 
@@ -160,7 +161,7 @@ async function boot() {
 
 function openTable(c, joinIfNew = true) {
   if (unsub) unsub();
-  code = c; game = undefined; ui.joining = joinIfNew; ui.closedNotice = false;
+  code = c; game = undefined; ui.joining = joinIfNew; ui.closedNotice = false; ui.chatOpen = false; ui.chatSeen = 0;
   store.set('mdc.code', c, pidArea());
   let first = true;
   unsub = sync.subscribe(c, (s, reason) => {
@@ -207,23 +208,25 @@ function tableClosed() {
   unsub = null; code = null; game = null;
   store.set('mdc.code', null, pidArea());
   history.replaceState(null, '', location.pathname);
-  Object.assign(ui, { rules: false, menu: false, accuseTarget: null, joining: false, pocket: false, boxOpen: false, pick: null, closedNotice: true });
+  Object.assign(ui, { rules: false, menu: false, accuseTarget: null, joining: false, pocket: false, boxOpen: false, pick: null, closedNotice: true, chatOpen: false });
   render();
 }
 
 async function act(action) {
-  if (!code) return;
+  if (!code) return false;
   ui.busy = true;
-  try { await sync.dispatch(code, { ...action, by: pid }); }
+  try { await sync.dispatch(code, { ...action, by: pid }); return true; }
   catch (e) {
     if (e instanceof GameError) toast(e.message);
     else { console.error(e); toast('משהו השתבש. נסו שוב.'); }
+    return false;
   } finally { ui.busy = false; }
 }
 
 // ---------- timers ----------
 function tick() {
   if (!game) return;
+  renderChat(); // messages expire on their own clock, not on state updates
   const acc = game.accusation;
   if (acc) {
     if (ui.accSeq !== acc.seq) { ui.accSeq = acc.seq; ui.accAt = Date.now(); renderOverlay(); }
@@ -241,6 +244,7 @@ setInterval(() => {
 
 // ---------- render ----------
 function render() {
+  renderChat();
   if (drag) { drag.stale = true; return; } // don't rebuild the DOM under a finger mid-drag
   const app = $('#app');
   if (!code) { app.innerHTML = viewHome(); renderOverlay(); return; }
@@ -723,6 +727,8 @@ function menuSheet() {
     <h2>תפריט</h2>
     <label class="field">השם שלך<input id="rename" maxlength="16" value="${esc(store.get('mdc.name', pidArea()) || '')}"></label>
     <button data-act="rename">שמור שם</button>
+    ${isHost ? `<label class="field">זמן חיים להודעות בצ'אט (בשניות)<input id="chattl" type="number" inputmode="numeric" min="${MIN_CHAT_TTL}" max="${MAX_CHAT_TTL}" value="${game.settings.chatTtl}"></label>
+    <button data-act="chatTtl">עדכן זמן</button>` : ''}
     ${isHost && mid ? '<button class="danger" data-act="abort">בטל את הסיבוב וחזור ללובי</button>' : ''}
     ${isHost && sync.mode === 'p2p'
       ? '<p class="small muted">אתה המארח: הטלפון שלך מחזיק את השולחן. אם תסגור אותו, המשחק ייגמר לכולם.</p><button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>'
@@ -766,6 +772,52 @@ function rulesSheet() {
     <button class="primary" data-act="closeSheet">הבנתי</button></div>`;
 }
 
+// ---------- chat ----------
+// The chat lives outside #app on purpose: render() rebuilds #app on every state change, which would wipe a half-typed
+// message. A message is shown while it is younger than the table's chatTtl (set by the host in the menu); the
+// reducer drops the expired ones from the state whenever the next message is sent.
+const chatTtl = () => (game && game.settings.chatTtl) || DEFAULT_CHAT_TTL;
+function fmtTtl(sec) {
+  if (sec === 60) return 'דקה';
+  return sec % 60 === 0 ? `${sec / 60} דקות` : `${sec} שניות`;
+}
+let chatSig = '';
+function renderChat() {
+  const root = $('#chat');
+  const on = !!(code && game && game.players[pid]);
+  root.hidden = !on;
+  if (!on) { chatSig = ''; return; }
+  const ttl = chatTtl();
+  const live = game.chat.filter((m) => Date.now() - m.at < ttl * 1000);
+  if (ui.chatOpen) ui.chatSeen = game.chatSeq;
+  const unread = !ui.chatOpen && live.some((m) => m.by !== pid && m.id > ui.chatSeen);
+  $('#chatpanel').hidden = !ui.chatOpen;
+  $('#chatbtn').hidden = ui.chatOpen;
+  $('#chatbtn .dot').hidden = !unread;
+  $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.`;
+  const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by))].join('|');
+  if (sig === chatSig) return;
+  chatSig = sig;
+  const log = $('#chatlog');
+  log.innerHTML = live.length
+    ? live.map((m) => `<li class="${m.by === pid ? 'me' : ''}"><b>${esc(nameOf(game, m.by))}</b><span>${esc(m.text)}</span></li>`).join('')
+    : '<li class="empty muted small">אין הודעות</li>';
+  log.scrollTop = log.scrollHeight;
+}
+async function sendChat() {
+  const input = $('#chatinput');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  if (!(await act({ type: 'chat', text, now: Date.now() })) && !input.value) input.value = text; // failed: give the text back
+  input.focus();
+}
+document.addEventListener('submit', (ev) => {
+  if (ev.target.id !== 'chatform') return;
+  ev.preventDefault();
+  sendChat();
+});
+
 // ---------- events ----------
 document.addEventListener('click', async (ev) => {
   wake();
@@ -783,6 +835,13 @@ document.addEventListener('click', async (ev) => {
     case 'closeTable': ui.menu = false; ui.joining = false; renderOverlay(); return leaveTable(true);
     case 'rename': { const v = ($('#rename').value || '').trim().slice(0, 16); if (!v) return; store.set('mdc.name', v, pidArea()); ui.menu = false; await act({ type: 'rename', name: v }); return render(); }
     case 'abort': ui.menu = false; renderOverlay(); return act({ type: 'abort' });
+    case 'chatToggle': ui.chatOpen = !ui.chatOpen; if (ui.chatOpen) ui.chatSeen = game ? game.chatSeq : 0; renderChat(); if (ui.chatOpen) $('#chatinput').focus(); return;
+    case 'chatTtl': {
+      const sec = Math.round(+($('#chattl').value));
+      if (!(sec >= MIN_CHAT_TTL && sec <= MAX_CHAT_TTL)) { toast(`הזמן צריך להיות בין ${MIN_CHAT_TTL} ל־${MAX_CHAT_TTL} שניות`); return; }
+      if (await act({ type: 'chatTtl', seconds: sec })) { ui.menu = false; renderOverlay(); toast(`ההודעות יימחקו אחרי ${fmtTtl(sec)}`); }
+      return;
+    }
     case 'copy': {
       const link = el.dataset.link;
       try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); }
@@ -930,6 +989,7 @@ function armBack() {
 
 // Returns true when Back was consumed inside the app, false when the app should let go.
 function handleBack() {
+  if (ui.chatOpen) { ui.chatOpen = false; renderChat(); return true; }
   if (ui.rules || ui.menu) { ui.rules = false; ui.menu = false; renderOverlay(); return true; }
   if (game && ui.accuseTarget) { ui.accuseTarget = null; renderOverlay(); return true; }
   if (game && (game.accusation || (game.reveal && game.reveal.seq > ui.revealSeen && game.players[pid]))) return true; // can't dismiss a live accusation/reveal

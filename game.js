@@ -6,6 +6,11 @@ export const MIN_PLAYERS = 5;
 export const MAX_PLAYERS = 12;
 export const TOKEN_TYPES = ['henchman', 'fbi', 'cia', 'driver', 'cleaner'];
 export const AGENTS = ['fbi', 'cia'];
+export const DEFAULT_CHAT_TTL = 60;   // seconds a chat message stays visible; the host can change it
+export const MIN_CHAT_TTL = 5;
+export const MAX_CHAT_TTL = 3600;
+export const MAX_CHAT_LEN = 200;
+const MAX_CHAT_KEPT = 50;
 
 export class GameError extends Error {}
 const fail = (msg) => { throw new GameError(msg); };
@@ -40,7 +45,7 @@ export function newTable(code, hostId, hostName, now = Date.now()) {
     players: { [hostId]: { name: hostName, joinedAt: now } },
     order: [hostId],
     godfatherId: hostId,
-    settings: { cleaner: false, jokers: 2 },
+    settings: { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL },
   });
 }
 
@@ -50,7 +55,9 @@ export function normalize(s) {
   const o = { ...s };
   o.players = o.players || {};
   o.order = Array.isArray(o.order) ? o.order.filter(Boolean) : Object.values(o.order || {});
-  o.settings = { cleaner: false, jokers: 2, ...(o.settings || {}) };
+  o.settings = { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL, ...(o.settings || {}) };
+  o.chat = Array.isArray(o.chat) ? o.chat.filter(Boolean) : Object.values(o.chat || {});
+  o.chatSeq = o.chatSeq || 0;
   o.box = o.box ? { diamonds: o.box.diamonds || 0, tokens: { ...zeroTokens(), ...(o.box.tokens || {}) } } : null;
   o.takes = o.takes || {};
   o.eliminated = o.eliminated || {};
@@ -162,6 +169,23 @@ export function reduce(state, action) {
       if (s.phase !== 'lobby') fail('אפשר לשנות הגדרות רק בלובי');
       if (typeof p.cleaner === 'boolean') s.settings.cleaner = p.cleaner;
       if (Number.isInteger(p.jokers)) s.settings.jokers = Math.max(0, Math.min(5, p.jokers));
+      return s;
+    }
+    // Chat: every message carries its send time and disappears once it is older than settings.chatTtl.
+    case 'chat': {
+      if (!s.players[by]) fail('אתה לא בשולחן');
+      const text = String(p.text ?? '').trim().slice(0, MAX_CHAT_LEN);
+      if (!text) fail('ההודעה ריקה');
+      const at = Number.isFinite(p.now) ? p.now : Date.now();
+      const ttl = s.settings.chatTtl * 1000;
+      s.chatSeq += 1;
+      s.chat = [...s.chat.filter((m) => at - m.at < ttl), { id: s.chatSeq, by, text, at }].slice(-MAX_CHAT_KEPT);
+      return s;
+    }
+    case 'chatTtl': {
+      if (!isHost) fail('רק המארח משנה את זמן ההודעות');
+      if (!Number.isFinite(p.seconds)) fail('זמן לא תקין');
+      s.settings.chatTtl = Math.max(MIN_CHAT_TTL, Math.min(MAX_CHAT_TTL, Math.round(p.seconds)));
       return s;
     }
     case 'start': {
