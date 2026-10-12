@@ -792,6 +792,14 @@ function chatLocked() {
   const last = game.chatLast[pid];
   return Date.now() < Math.max(Math.min(ui.chatLockUntil, Date.now() + cd), last != null ? last + cd : 0);
 }
+// One color per player, so messages are easy to tell apart. 12 colors for up to 12 players, handed out by join
+// order (not seat order, which the host reorders), so a player keeps the same color for the whole evening.
+const CHAT_COLORS = ['#ff8a7a', '#7cc48f', '#6fb7ff', '#f5c451', '#c49bff', '#5fd3c8', '#ff9f43', '#ff7eb6', '#a3d65c', '#8fa8ff', '#e6b980', '#d6d6d6'];
+function chatColor(id) {
+  const ids = Object.keys(game.players).sort((a, b) => (game.players[a].joinedAt || 0) - (game.players[b].joinedAt || 0) || (a < b ? -1 : 1));
+  const i = ids.indexOf(id);
+  return i < 0 ? 'var(--muted)' : CHAT_COLORS[i % CHAT_COLORS.length]; // -1: the sender has left the table
+}
 let chatSig = '';
 function renderChat() {
   const root = $('#chat');
@@ -808,12 +816,12 @@ function renderChat() {
   const cd = chatCooldown();
   $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.${cd ? ` אפשר לשלוח הודעה כל ${fmtTtl(cd)}.` : ''}`;
   $('#chatform button').disabled = chatLocked(); // re-checked every tick, so it unlocks on its own
-  const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by))].join('|');
+  const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by) + chatColor(m.by))].join('|');
   if (sig === chatSig) return;
   chatSig = sig;
   const log = $('#chatlog');
   log.innerHTML = live.length
-    ? live.map((m) => `<li class="${m.by === pid ? 'me' : ''}"><b>${esc(nameOf(game, m.by))}</b><span>${esc(m.text)}</span></li>`).join('')
+    ? live.map((m) => `<li class="${m.by === pid ? 'me' : ''}" style="--pc:${chatColor(m.by)}"><b>${esc(nameOf(game, m.by))}</b><span>${esc(m.text)}</span></li>`).join('')
     : '<li class="empty muted small">אין הודעות</li>';
   log.scrollTop = log.scrollHeight;
 }

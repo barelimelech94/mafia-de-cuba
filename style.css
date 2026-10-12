@@ -288,8 +288,9 @@ body.solo #chat { bottom: 56px; }
 .chathead { display: flex; align-items: center; justify-content: space-between; }
 #chatlog { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; overflow-y: auto; min-height: 72px; flex: 1; }
 #chatlog li { display: flex; flex-direction: column; padding: 6px 10px; background: var(--wood-2); border-radius: 10px; border-inline-start: 3px solid var(--line); overflow-wrap: anywhere; }
-#chatlog li.me { border-inline-start-color: var(--gold); }
-#chatlog li b { font-size: .8rem; color: var(--gold-hi); }
+#chatlog li { border-inline-start: 4px solid var(--pc, var(--line)); }
+#chatlog li.me { background: #43291e; } /* my own messages: same color as everyone sees, a touch lighter */
+#chatlog li b { font-size: .8rem; color: var(--pc, var(--gold-hi)); }
 #chatlog li.empty { background: transparent; border: 0; align-items: center; }
 #chatform { display: flex; gap: 8px; }
 #chatform input { flex: 1; min-width: 0; }
