@@ -10,6 +10,7 @@ export const DEFAULT_CHAT_TTL = 60;   // seconds a chat message stays visible; t
 export const MIN_CHAT_TTL = 5;
 export const MAX_CHAT_TTL = 3600;
 export const MAX_CHAT_LEN = 200;
+export const CHAT_COOLDOWN = 2;   // seconds a player must wait between two messages
 const MAX_CHAT_KEPT = 50;
 
 export class GameError extends Error {}
@@ -178,6 +179,8 @@ export function reduce(state, action) {
       if (!text) fail('ההודעה ריקה');
       const at = Number.isFinite(p.now) ? p.now : Date.now();
       const ttl = s.settings.chatTtl * 1000;
+      const last = [...s.chat].reverse().find((m) => m.by === by); // kept for at least MIN_CHAT_TTL > CHAT_COOLDOWN
+      if (last && at - last.at < CHAT_COOLDOWN * 1000) fail(`אפשר לשלוח הודעה אחת כל ${CHAT_COOLDOWN} שניות`);
       s.chatSeq += 1;
       s.chat = [...s.chat.filter((m) => at - m.at < ttl), { id: s.chatSeq, by, text, at }].slice(-MAX_CHAT_KEPT);
       return s;

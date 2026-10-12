@@ -163,7 +163,8 @@ t('chat: only seated players, no empty text, length and history are capped', () 
   assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: '   ' }), /ריקה/);
   s = act(s, { type: 'chat', by: 'p0', text: 'x'.repeat(500), now: 1 });
   assert.equal(s.chat[0].text.length, 200);
-  for (let i = 0; i < 60; i++) s = act(s, { type: 'chat', by: 'p0', text: 'm' + i, now: 2 + i });
+  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 3600 }); // so the cap, not the expiry, trims the list
+  for (let i = 0; i < 60; i++) s = act(s, { type: 'chat', by: 'p0', text: 'm' + i, now: 10_000 + i * 2000 });
   assert.equal(s.chat.length, 50);
   assert.equal(s.chat[49].text, 'm59');
 });
@@ -189,6 +190,18 @@ t('chat: tables without chat fields (old saves, Firebase dropping empties) get d
   assert.equal(s.chatSeq, 0);
   assert.equal(s.settings.chatTtl, 60);
   assert.equal(act(s, { type: 'chat', by: 'p0', text: 'היי', now: 5 }).chat.length, 1);
+});
+
+t('chat: a player can send one message per 2s; others are not slowed down', () => {
+  let s = newTable('ABCD', 'p0', 'P0');
+  s = reduce(s, { type: 'join', by: 'p1', name: 'P1' });
+  s = act(s, { type: 'chat', by: 'p0', text: 'a', now: 100_000 });
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'b', now: 101_999 }), /כל 2 שניות/);
+  s = act(s, { type: 'chat', by: 'p1', text: 'c', now: 100_500 }); // another player is unaffected
+  s = act(s, { type: 'chat', by: 'p0', text: 'd', now: 102_000 }); // exactly 2s later is fine
+  assert.deepEqual(s.chat.map((m) => m.text), ['a', 'c', 'd']);
+  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 5 }); // the shortest TTL still keeps the last message long enough
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'e', now: 103_000 }), /כל 2 שניות/);
 });
 
 console.log(`\n${passed} tests passed`);
