@@ -3,7 +3,7 @@ import { createSync } from './sync.js';
 import {
   newTable, takers, currentTaker, rightNeighbor, boxEmpty, roleOf, isOut, tokensFor,
   TOKEN_TYPES, AGENTS, MIN_PLAYERS, MAX_PLAYERS, GameError,
-  DEFAULT_CHAT_TTL, MIN_CHAT_TTL, MAX_CHAT_TTL,
+  DEFAULT_CHAT_TTL, MIN_CHAT_TTL, MAX_CHAT_TTL, CHAT_COOLDOWN,
 } from './game.js';
 
 // ---------- small utils ----------
@@ -77,7 +77,7 @@ const ui = {
   boxOpen: false, boxTurnKey: '', pick: null, pickN: 1, hideN: 0,
   pocket: false, accuseTarget: null, rules: false, menu: false,
   revealSeen: 0, revealAt: 0, accSeq: 0, accAt: 0, resolvedSent: 0,
-  newGf: null, joining: false, busy: false, chatOpen: false, chatSeen: 0,
+  newGf: null, joining: false, busy: false, chatOpen: false, chatSeen: 0, chatLockUntil: 0,
 };
 const ui0 = { ...ui };
 
@@ -781,6 +781,12 @@ function fmtTtl(sec) {
   if (sec === 60) return 'דקה';
   return sec % 60 === 0 ? `${sec / 60} דקות` : `${sec} שניות`;
 }
+// Send stays locked until CHAT_COOLDOWN seconds after my last message: taken from the state, or from the moment I
+// pressed send so it locks before the round trip. The reducer enforces the same limit for any other client.
+function chatLocked() {
+  const mine = game.chat.filter((m) => m.by === pid).pop();
+  return Date.now() < Math.max(ui.chatLockUntil, mine ? mine.at + CHAT_COOLDOWN * 1000 : 0);
+}
 let chatSig = '';
 function renderChat() {
   const root = $('#chat');
@@ -795,6 +801,7 @@ function renderChat() {
   $('#chatbtn').hidden = ui.chatOpen;
   $('#chatbtn .dot').hidden = !unread;
   $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.`;
+  $('#chatform button').disabled = chatLocked(); // re-checked every tick, so it unlocks on its own
   const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by))].join('|');
   if (sig === chatSig) return;
   chatSig = sig;
@@ -807,9 +814,15 @@ function renderChat() {
 async function sendChat() {
   const input = $('#chatinput');
   const text = input.value.trim();
-  if (!text) return;
+  if (!text || chatLocked()) return; // locked: Enter does nothing and the text stays
+  ui.chatLockUntil = Date.now() + CHAT_COOLDOWN * 1000;
+  renderChat();
   input.value = '';
-  if (!(await act({ type: 'chat', text, now: Date.now() })) && !input.value) input.value = text; // failed: give the text back
+  if (!(await act({ type: 'chat', text, now: Date.now() }))) {
+    ui.chatLockUntil = 0; // nothing was sent, so nothing to wait for
+    if (!input.value) input.value = text; // give the text back
+    renderChat();
+  }
   input.focus();
 }
 document.addEventListener('submit', (ev) => {
