@@ -184,24 +184,54 @@ t('chat: only the host changes the TTL, any phase, clamped; it applies to existi
 
 t('chat: tables without chat fields (old saves, Firebase dropping empties) get defaults', () => {
   const old = JSON.parse(JSON.stringify(newTable('ABCD', 'p0', 'P0')));
-  delete old.chat; delete old.chatSeq; delete old.settings.chatTtl;
+  delete old.chat; delete old.chatSeq; delete old.chatLast; delete old.settings.chatTtl; delete old.settings.chatCooldown;
   const s = normalize(old);
   assert.deepEqual(s.chat, []);
   assert.equal(s.chatSeq, 0);
   assert.equal(s.settings.chatTtl, 60);
+  assert.equal(s.settings.chatCooldown, 2);
+  assert.deepEqual(s.chatLast, {});
   assert.equal(act(s, { type: 'chat', by: 'p0', text: 'היי', now: 5 }).chat.length, 1);
 });
 
-t('chat: a player can send one message per 2s; others are not slowed down', () => {
+t('chat: by default a player can send one message per 2s; others are not slowed down', () => {
   let s = newTable('ABCD', 'p0', 'P0');
   s = reduce(s, { type: 'join', by: 'p1', name: 'P1' });
+  assert.equal(s.settings.chatCooldown, 2);
   s = act(s, { type: 'chat', by: 'p0', text: 'a', now: 100_000 });
-  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'b', now: 101_999 }), /כל 2 שניות/);
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'b', now: 101_999 }), /חכו רגע/);
   s = act(s, { type: 'chat', by: 'p1', text: 'c', now: 100_500 }); // another player is unaffected
   s = act(s, { type: 'chat', by: 'p0', text: 'd', now: 102_000 }); // exactly 2s later is fine
   assert.deepEqual(s.chat.map((m) => m.text), ['a', 'c', 'd']);
-  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 5 }); // the shortest TTL still keeps the last message long enough
-  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'e', now: 103_000 }), /כל 2 שניות/);
+});
+
+t('chat cooldown: only the host changes it, any phase, clamped to 0..3600; 0 means no limit', () => {
+  let s = table(6);
+  assert.throws(() => reduce(s, { type: 'chatCooldown', by: 'p1', seconds: 5 }), /המארח/);
+  assert.throws(() => reduce(s, { type: 'chatCooldown', by: 'p0', seconds: NaN }), /לא תקין/);
+  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 10 }); // mid-round (phase is 'setup')
+  assert.equal(s.settings.chatCooldown, 10);
+  assert.equal(act(s, { type: 'chatCooldown', by: 'p0', seconds: -3 }).settings.chatCooldown, 0);
+  assert.equal(act(s, { type: 'chatCooldown', by: 'p0', seconds: 99999 }).settings.chatCooldown, 3600);
+  s = act(s, { type: 'chat', by: 'p2', text: 'a', now: 0 });
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p2', text: 'b', now: 9_999 }), /חכו רגע/);
+  s = act(s, { type: 'chat', by: 'p2', text: 'b', now: 10_000 });
+  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 0 });
+  s = act(s, { type: 'chat', by: 'p2', text: 'c', now: 10_000 }); // same instant, allowed
+  assert.deepEqual(s.chat.map((m) => m.text), ['a', 'b', 'c']);
+});
+
+t('chat cooldown holds even when it is longer than the TTL (the message itself is already gone)', () => {
+  let s = newTable('ABCD', 'p0', 'P0');
+  s = reduce(s, { type: 'join', by: 'p1', name: 'P1' });
+  s = act(s, { type: 'chatTtl', by: 'p0', seconds: 5 });
+  s = act(s, { type: 'chatCooldown', by: 'p0', seconds: 30 });
+  s = act(s, { type: 'chat', by: 'p0', text: 'a', now: 0 });
+  s = act(s, { type: 'chat', by: 'p1', text: 'x', now: 10_000 }); // this send drops the expired 'a' from the list
+  assert.deepEqual(s.chat.map((m) => m.text), ['x']);
+  assert.throws(() => reduce(s, { type: 'chat', by: 'p0', text: 'b', now: 20_000 }), /חכו רגע/);
+  s = act(s, { type: 'chat', by: 'p0', text: 'b', now: 30_000 });
+  assert.deepEqual(s.chat.map((m) => m.text), ['b']);
 });
 
 console.log(`\n${passed} tests passed`);

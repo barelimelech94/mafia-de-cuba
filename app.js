@@ -3,7 +3,7 @@ import { createSync } from './sync.js';
 import {
   newTable, takers, currentTaker, rightNeighbor, boxEmpty, roleOf, isOut, tokensFor,
   TOKEN_TYPES, AGENTS, MIN_PLAYERS, MAX_PLAYERS, GameError,
-  DEFAULT_CHAT_TTL, MIN_CHAT_TTL, MAX_CHAT_TTL, CHAT_COOLDOWN,
+  DEFAULT_CHAT_TTL, MIN_CHAT_TTL, MAX_CHAT_TTL, DEFAULT_CHAT_COOLDOWN, MIN_CHAT_COOLDOWN, MAX_CHAT_COOLDOWN,
 } from './game.js';
 
 // ---------- small utils ----------
@@ -728,7 +728,9 @@ function menuSheet() {
     <label class="field">השם שלך<input id="rename" maxlength="16" value="${esc(store.get('mdc.name', pidArea()) || '')}"></label>
     <button data-act="rename">שמור שם</button>
     ${isHost ? `<label class="field">זמן חיים להודעות בצ'אט (בשניות)<input id="chattl" type="number" inputmode="numeric" min="${MIN_CHAT_TTL}" max="${MAX_CHAT_TTL}" value="${game.settings.chatTtl}"></label>
-    <button data-act="chatTtl">עדכן זמן</button>` : ''}
+    <button data-act="chatTtl">עדכן זמן</button>
+    <label class="field">השהייה בין הודעות של אותו שחקן (בשניות, 0 = בלי הגבלה)<input id="chatcd" type="number" inputmode="numeric" min="${MIN_CHAT_COOLDOWN}" max="${MAX_CHAT_COOLDOWN}" value="${game.settings.chatCooldown}"></label>
+    <button data-act="chatCooldown">עדכן השהייה</button>` : ''}
     ${isHost && mid ? '<button class="danger" data-act="abort">בטל את הסיבוב וחזור ללובי</button>' : ''}
     ${isHost && sync.mode === 'p2p'
       ? '<p class="small muted">אתה המארח: הטלפון שלך מחזיק את השולחן. אם תסגור אותו, המשחק ייגמר לכולם.</p><button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>'
@@ -777,15 +779,18 @@ function rulesSheet() {
 // message. A message is shown while it is younger than the table's chatTtl (set by the host in the menu); the
 // reducer drops the expired ones from the state whenever the next message is sent.
 const chatTtl = () => (game && game.settings.chatTtl) || DEFAULT_CHAT_TTL;
+const chatCooldown = () => (game ? game.settings.chatCooldown ?? DEFAULT_CHAT_COOLDOWN : DEFAULT_CHAT_COOLDOWN);
 function fmtTtl(sec) {
+  if (sec === 1) return 'שנייה';
   if (sec === 60) return 'דקה';
   return sec % 60 === 0 ? `${sec / 60} דקות` : `${sec} שניות`;
 }
-// Send stays locked until CHAT_COOLDOWN seconds after my last message: taken from the state, or from the moment I
-// pressed send so it locks before the round trip. The reducer enforces the same limit for any other client.
+// Send stays locked for the table's chatCooldown (set by the host) after my last message: taken from the state, or
+// from the moment I pressed send so it locks before the round trip. The reducer enforces the same limit.
 function chatLocked() {
-  const mine = game.chat.filter((m) => m.by === pid).pop();
-  return Date.now() < Math.max(ui.chatLockUntil, mine ? mine.at + CHAT_COOLDOWN * 1000 : 0);
+  const cd = chatCooldown() * 1000;
+  const last = game.chatLast[pid];
+  return Date.now() < Math.max(Math.min(ui.chatLockUntil, Date.now() + cd), last != null ? last + cd : 0);
 }
 let chatSig = '';
 function renderChat() {
@@ -800,7 +805,8 @@ function renderChat() {
   $('#chatpanel').hidden = !ui.chatOpen;
   $('#chatbtn').hidden = ui.chatOpen;
   $('#chatbtn .dot').hidden = !unread;
-  $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.`;
+  const cd = chatCooldown();
+  $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.${cd ? ` אפשר לשלוח הודעה כל ${fmtTtl(cd)}.` : ''}`;
   $('#chatform button').disabled = chatLocked(); // re-checked every tick, so it unlocks on its own
   const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by))].join('|');
   if (sig === chatSig) return;
@@ -815,7 +821,7 @@ async function sendChat() {
   const input = $('#chatinput');
   const text = input.value.trim();
   if (!text || chatLocked()) return; // locked: Enter does nothing and the text stays
-  ui.chatLockUntil = Date.now() + CHAT_COOLDOWN * 1000;
+  ui.chatLockUntil = Date.now() + chatCooldown() * 1000;
   renderChat();
   input.value = '';
   if (!(await act({ type: 'chat', text, now: Date.now() }))) {
@@ -853,6 +859,12 @@ document.addEventListener('click', async (ev) => {
       const sec = Math.round(+($('#chattl').value));
       if (!(sec >= MIN_CHAT_TTL && sec <= MAX_CHAT_TTL)) { toast(`הזמן צריך להיות בין ${MIN_CHAT_TTL} ל־${MAX_CHAT_TTL} שניות`); return; }
       if (await act({ type: 'chatTtl', seconds: sec })) { ui.menu = false; renderOverlay(); toast(`ההודעות יימחקו אחרי ${fmtTtl(sec)}`); }
+      return;
+    }
+    case 'chatCooldown': {
+      const sec = Math.round(+($('#chatcd').value));
+      if (!(sec >= MIN_CHAT_COOLDOWN && sec <= MAX_CHAT_COOLDOWN)) { toast(`ההשהייה צריכה להיות בין ${MIN_CHAT_COOLDOWN} ל־${MAX_CHAT_COOLDOWN} שניות`); return; }
+      if (await act({ type: 'chatCooldown', seconds: sec })) { ui.menu = false; renderOverlay(); toast(sec ? `אפשר לשלוח הודעה כל ${fmtTtl(sec)}` : 'אין הגבלה על קצב ההודעות'); }
       return;
     }
     case 'copy': {

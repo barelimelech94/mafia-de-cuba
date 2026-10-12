@@ -10,7 +10,9 @@ export const DEFAULT_CHAT_TTL = 60;   // seconds a chat message stays visible; t
 export const MIN_CHAT_TTL = 5;
 export const MAX_CHAT_TTL = 3600;
 export const MAX_CHAT_LEN = 200;
-export const CHAT_COOLDOWN = 2;   // seconds a player must wait between two messages
+export const DEFAULT_CHAT_COOLDOWN = 2;   // seconds a player must wait between two messages; the host can change it
+export const MIN_CHAT_COOLDOWN = 0;       // 0 = no limit
+export const MAX_CHAT_COOLDOWN = 3600;
 const MAX_CHAT_KEPT = 50;
 
 export class GameError extends Error {}
@@ -46,7 +48,7 @@ export function newTable(code, hostId, hostName, now = Date.now()) {
     players: { [hostId]: { name: hostName, joinedAt: now } },
     order: [hostId],
     godfatherId: hostId,
-    settings: { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL },
+    settings: { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL, chatCooldown: DEFAULT_CHAT_COOLDOWN },
   });
 }
 
@@ -56,9 +58,10 @@ export function normalize(s) {
   const o = { ...s };
   o.players = o.players || {};
   o.order = Array.isArray(o.order) ? o.order.filter(Boolean) : Object.values(o.order || {});
-  o.settings = { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL, ...(o.settings || {}) };
+  o.settings = { cleaner: false, jokers: 2, chatTtl: DEFAULT_CHAT_TTL, chatCooldown: DEFAULT_CHAT_COOLDOWN, ...(o.settings || {}) };
   o.chat = Array.isArray(o.chat) ? o.chat.filter(Boolean) : Object.values(o.chat || {});
   o.chatSeq = o.chatSeq || 0;
+  o.chatLast = o.chatLast || {}; // player id -> time of their last message (kept apart from chat, which expires)
   o.box = o.box ? { diamonds: o.box.diamonds || 0, tokens: { ...zeroTokens(), ...(o.box.tokens || {}) } } : null;
   o.takes = o.takes || {};
   o.eliminated = o.eliminated || {};
@@ -179,9 +182,10 @@ export function reduce(state, action) {
       if (!text) fail('ההודעה ריקה');
       const at = Number.isFinite(p.now) ? p.now : Date.now();
       const ttl = s.settings.chatTtl * 1000;
-      const last = [...s.chat].reverse().find((m) => m.by === by); // kept for at least MIN_CHAT_TTL > CHAT_COOLDOWN
-      if (last && at - last.at < CHAT_COOLDOWN * 1000) fail(`אפשר לשלוח הודעה אחת כל ${CHAT_COOLDOWN} שניות`);
+      const last = s.chatLast[by];
+      if (last != null && at - last < s.settings.chatCooldown * 1000) fail('חכו רגע לפני ההודעה הבאה');
       s.chatSeq += 1;
+      s.chatLast[by] = at;
       s.chat = [...s.chat.filter((m) => at - m.at < ttl), { id: s.chatSeq, by, text, at }].slice(-MAX_CHAT_KEPT);
       return s;
     }
@@ -189,6 +193,12 @@ export function reduce(state, action) {
       if (!isHost) fail('רק המארח משנה את זמן ההודעות');
       if (!Number.isFinite(p.seconds)) fail('זמן לא תקין');
       s.settings.chatTtl = Math.max(MIN_CHAT_TTL, Math.min(MAX_CHAT_TTL, Math.round(p.seconds)));
+      return s;
+    }
+    case 'chatCooldown': {
+      if (!isHost) fail('רק המארח משנה את ההשהיה בין הודעות');
+      if (!Number.isFinite(p.seconds)) fail('זמן לא תקין');
+      s.settings.chatCooldown = Math.max(MIN_CHAT_COOLDOWN, Math.min(MAX_CHAT_COOLDOWN, Math.round(p.seconds)));
       return s;
     }
     case 'start': {
