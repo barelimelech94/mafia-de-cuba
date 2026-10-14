@@ -5,7 +5,7 @@
   "description": "Companion app for Mafia de Cuba. The local server (server/server.js) lets a group play without internet.",
   "scripts": {
     "start": "node server/server.js",
-    "test": "node test/game.test.mjs && node test/server.test.mjs"
+    "test": "node test/game.test.mjs && node test/i18n.test.mjs && node test/server.test.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"

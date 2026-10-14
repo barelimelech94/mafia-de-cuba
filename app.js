@@ -1,5 +1,6 @@
 import { firebaseConfig } from './config.js';
 import { createSync } from './sync.js';
+import { t, tErr, getLang, setLang, applyStatic } from './i18n.js';
 import {
   newTable, takers, currentTaker, rightNeighbor, boxEmpty, roleOf, isOut, tokensFor,
   TOKEN_TYPES, AGENTS, MIN_PLAYERS, MAX_PLAYERS, GameError,
@@ -35,34 +36,34 @@ const I = {
 };
 const TOKEN_ICON = { henchman: I.hat, fbi: I.badge, cia: I.badge, driver: I.wheel, cleaner: I.cross };
 const ROLE_ICON = { ...TOKEN_ICON, godfather: I.crown, thief: I.gem, urchin: I.cap };
-const TOKEN_NAME = { henchman: 'חייל נאמן', fbi: 'סוכן FBI', cia: 'סוכן CIA', driver: 'נהג', cleaner: 'המנקה' };
-const ROLE_NAME = { ...TOKEN_NAME, godfather: 'הסנדק', thief: 'גנב', urchin: 'ילד רחוב' };
+const ROLES = ['henchman', 'fbi', 'cia', 'driver', 'cleaner', 'godfather', 'thief', 'urchin'];
+const roleName = (r) => t('role.' + r);  // "Driver" (a label)
+const roleA = (r) => t('roleA.' + r);    // "a driver" (inside a sentence)
 // one portrait per role (roles/<role>.webp), preloaded so the pocket peek and the reveal never wait on the network
-const ROLE_IMG = Object.fromEntries(Object.keys(ROLE_NAME).map((r) => [r, `roles/${r}.webp`]));
-const roleImg = (r, cls = '') => ROLE_IMG[r] ? `<img class="roleimg ${cls}" src="${ROLE_IMG[r]}" alt="${ROLE_NAME[r]}" draggable="false" decoding="async">` : '';
+const ROLE_IMG = Object.fromEntries(ROLES.map((r) => [r, `roles/${r}.webp`]));
+const roleImg = (r, cls = '') => ROLE_IMG[r] ? `<img class="roleimg ${cls}" src="${ROLE_IMG[r]}" alt="${roleName(r)}" draggable="false" decoding="async">` : '';
 Object.values(ROLE_IMG).forEach((src) => { const im = new Image(); im.src = src; });
 
 function roleGoal(s, id) {
   const r = roleOf(s, id);
   switch (r) {
-    case 'godfather': return 'להחזיר את כל היהלומים שנגנבו. כל האשמה של מי שלא גנב עולה לך וויסקי, ואם נגמר הוויסקי, אתה מודח.';
-    case 'thief': return 'לא להיתפס. אם הסנדק מודח, הגנב עם הכי הרבה יהלומים שעוד במשחק מנצח.';
-    case 'henchman': return 'לעזור לסנדק לתפוס את הגנבים. אתה מנצח אם הסנדק מחזיר את כל היהלומים.';
-    case 'fbi': case 'cia': return 'לגרום לסנדק להאשים אותך. אם הוא מאשים אותך, אתה מנצח לבד.';
-    case 'driver': return `אתה מנצח אם השחקן שמימינך מנצח: ${esc(nameOf(s, rightNeighbor(s, id)))}.`;
-    case 'cleaner': return 'אתה בצד של הסנדק. כשהסנדק מאשים מישהו, אפשר ללחוץ POW לפני החשיפה: על סוכן אתה מנצח לבד, ועל כל אחד אחר שניכם מודחים.';
-    case 'urchin': return 'אין לך כלום בכיס, אבל אף אחד לא יודע. תמשוך חשד כדי שהסנדק יבזבז וויסקי. אתה מנצח אם גנב מנצח.';
+    case 'godfather': return t('goal.godfather');
+    case 'thief': return t('goal.thief');
+    case 'henchman': return t('goal.henchman');
+    case 'fbi': case 'cia': return t('goal.agent');
+    case 'driver': return t('goal.driver', { name: esc(nameOf(s, rightNeighbor(s, id))) });
+    case 'cleaner': return t('goal.cleaner');
+    case 'urchin': return t('goal.urchin');
     default: return '';
   }
 }
-const nameOf = (s, id) => (s.players[id] && s.players[id].name) || 'שחקן';
+const nameOf = (s, id) => (s.players[id] && s.players[id].name) || t('player');
 const gems = (n, max = 15) => `<div class="gem-row" aria-hidden="true">${I.gem.repeat(Math.min(n, max))}</div>`;
-const chip = (t, count) => `<span class="chip ${t}">${TOKEN_ICON[t]}${TOKEN_NAME[t]}${count > 1 ? ` <span class="x">×${count}</span>` : ''}</span>`;
+const chip = (tk, count) => `<span class="chip ${tk}">${TOKEN_ICON[tk]}${roleName(tk)}${count > 1 ? ` <span class="x">×${count}</span>` : ''}</span>`;
 const tokenChips = (tokens) => {
-  const list = TOKEN_TYPES.filter((t) => tokens[t] > 0);
-  return list.length ? `<div class="chips">${list.map((t) => chip(t, tokens[t])).join('')}</div>` : '<p class="muted">אין טוקנים</p>';
+  const list = TOKEN_TYPES.filter((tk) => tokens[tk] > 0);
+  return list.length ? `<div class="chips">${list.map((tk) => chip(tk, tokens[tk])).join('')}</div>` : `<p class="muted">${t('noTokens')}</p>`;
 };
-const takeText = (take) => !take ? '—' : take.kind === 'diamonds' ? `${take.n} יהלומים` : take.kind === 'urchin' ? 'כלום' : TOKEN_NAME[take.token];
 
 // ---------- app state ----------
 let sync;
@@ -89,7 +90,9 @@ function newPid() { return 'p' + Math.random().toString(36).slice(2, 10) + Date.
 // Keys 1-9 and 0 switch seats. The restart button reloads into a fresh table.
 let soloIds = null;
 const soloUi = {};
-const SOLO_NAMES = ['אלי', 'בני', 'גיל', 'דנה', 'הילה', 'ויקי', 'זאב', 'חנה', 'טל', 'יעל', 'כרמל', 'לוי'];
+const SOLO_NAMES = getLang() === 'en'
+  ? ['Alex', 'Ben', 'Cleo', 'Dana', 'Eli', 'Fay', 'Gus', 'Hana', 'Ivy', 'Jon', 'Kai', 'Lee']
+  : ['אלי', 'בני', 'גיל', 'דנה', 'הילה', 'ויקי', 'זאב', 'חנה', 'טל', 'יעל', 'כרמל', 'לוי'];
 async function bootSolo(n) {
   n = Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS, n));
   const c = '0000';
@@ -138,14 +141,15 @@ function renderSoloBar() {
   bar.innerHTML = soloIds.map((id, i) => {
     const tags = (id === game.godfatherId ? ' 👑' : '') + (id === holder ? ' ●' : '');
     return `<button data-pid="${id}" class="${id === pid ? 'on' : ''}" title="${i + 1 > 9 ? 0 : i + 1}">${esc(nameOf(game, id))}${tags}</button>`;
-  }).join('') + '<button data-restart="1" title="שולחן חדש">↻</button>';
+  }).join('') + `<button data-restart="1" title="${esc(t('solo.new'))}">↻</button>`;
 }
 
 // ---------- boot ----------
 async function boot() {
-  $('#app').innerHTML = '<div class="hero"><h1>הקופסה</h1><p class="muted">טוען…</p></div>';
+  applyStatic();
+  $('#app').innerHTML = `<div class="hero"><h1>${t('app.title')}</h1><p class="muted">${t('boot.loading')}</p></div>`;
   try { sync = await createSync(firebaseConfig); }
-  catch (e) { console.error(e); $('#app').innerHTML = '<div class="hero"><h1>הקופסה</h1><p>לא הצלחתי להתחבר לשרת. רעננו את הדף.</p></div>'; return; }
+  catch (e) { console.error(e); $('#app').innerHTML = `<div class="hero"><h1>${t('app.title')}</h1><p>${t('boot.fail')}</p></div>`; return; }
   pid = store.get('mdc.pid', pidArea()) || newPid();
   store.set('mdc.pid', pid, pidArea());
   sync.onConnection((c) => { connected = c; render(); });
@@ -169,7 +173,7 @@ function openTable(c, joinIfNew = true) {
     if (s === null) {
       // the host closed the table, or stayed unreachable too long: the table is gone for everyone
       if (reason === 'closed' || !first) { tableClosed(); return; }
-      toast('לא מצאתי שולחן עם הקוד הזה'); leaveTable();
+      toast(t('toast.noTable')); leaveTable();
       return;
     }
     if (first) { ui.revealSeen = s.reveal ? s.reveal.seq : 0; first = false; }
@@ -217,8 +221,8 @@ async function act(action) {
   ui.busy = true;
   try { await sync.dispatch(code, { ...action, by: pid }); return true; }
   catch (e) {
-    if (e instanceof GameError) toast(e.message);
-    else { console.error(e); toast('משהו השתבש. נסו שוב.'); }
+    if (e instanceof GameError) toast(tErr(e.message));
+    else { console.error(e); toast(t('toast.wrong')); }
     return false;
   } finally { ui.busy = false; }
 }
@@ -249,8 +253,8 @@ function render() {
   const app = $('#app');
   if (!code) { app.innerHTML = viewHome(); renderOverlay(); return; }
   if (game === undefined) {
-    app.innerHTML = `${band()}<div class="hero"><p class="muted">${connected ? `מתחבר לשולחן ${esc(code)}…` : 'מחכה לטלפון של המארח. ודאו שהאפליקציה פתוחה אצלו.'}</p>
-      <button class="ghost" data-act="leave">חזרה למסך הראשי</button></div>`;
+    app.innerHTML = `${band()}<div class="hero"><p class="muted">${connected ? t('connecting', { code: esc(code) }) : t('waitHost')}</p>
+      <button class="ghost" data-act="leave">${t('backHome')}</button></div>`;
     return;
   }
   if (!game) return;
@@ -263,8 +267,8 @@ function render() {
   else if (game.phase === 'investigation') body = viewInvestigation();
   else body = viewEnd();
   const iHost = game.hostId === pid;
-  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? 'אין חיבור לטלפון של המארח. מתחבר מחדש… אם הוא לא יחזור בעוד רגע, השולחן ייסגר.' : sync.mode === 'server' ? 'אין חיבור לשרת המקומי. בדקו שהטלפון על אותה רשת Wi-Fi. המשחק ימשיך כשהחיבור יחזור.' : 'אין חיבור לאינטרנט. המשחק ימשיך כשהחיבור יחזור.'}</p>`;
-  const test = sync.mode === 'local' && !soloIds ? '<p class="notice">מצב בדיקה: אין חיבור לשרת, אז כל ה"טלפונים" צריכים להיות לשוניות באותו דפדפן.</p>' : '';
+  const offline = connected ? '' : `<p class="notice">${sync.mode === 'p2p' && !iHost ? t('offline.p2p') : sync.mode === 'server' ? t('offline.server') : t('offline.net')}</p>`;
+  const test = sync.mode === 'local' && !soloIds ? `<p class="notice">${t('test.tabs')}</p>` : '';
   app.innerHTML = band() + offline + test + body;
   if (game.phase === 'lobby') drawQR();
   renderOverlay();
@@ -273,44 +277,45 @@ function render() {
 
 function band() {
   return `<header class="band">
-    <span class="title">הקופסה</span>
-    ${code ? `<span class="code num" aria-label="קוד שולחן">${esc(code)}</span>` : ''}
-    <button data-act="rules">חוקים</button>
-    ${code ? '<button data-act="menu" aria-label="תפריט">⋯</button>' : ''}
+    <span class="title">${t('app.title')}</span>
+    ${code ? `<span class="code num" aria-label="${t('band.code')}">${esc(code)}</span>` : ''}
+    <button data-act="lang" lang="${getLang() === 'he' ? 'en' : 'he'}" aria-label="${t('lang.aria')}">${t('lang.other')}</button>
+    <button data-act="rules">${t('band.rules')}</button>
+    ${code ? `<button data-act="menu" aria-label="${t('band.menu')}">⋯</button>` : ''}
   </header>`;
 }
 
 // ----- home -----
 function viewHome() {
   const name = store.get('mdc.name', pidArea()) || '';
-  const test = sync.mode === 'local' ? '<p class="notice">מצב בדיקה: עדיין לא מחובר לשרת. אפשר לנסות עם כמה לשוניות באותו דפדפן.</p>' : '';
+  const test = sync.mode === 'local' ? `<p class="notice">${t('test.home')}</p>` : '';
   return `${band()}
   <div class="hero">
-    <span class="hero-band">הוואנה · 1958</span>
-    <h1>הקופסה</h1>
-    <p class="sub">אפליקציה נלווית ל־Mafia de Cuba: הקופסה, היהלומים והטוקנים עוברים בטלפונים. החקירה נשארת סביב השולחן.</p>
+    <span class="hero-band">${t('home.band')}</span>
+    <h1>${t('app.title')}</h1>
+    <p class="sub">${t('home.sub')}</p>
   </div>
-  ${ui.closedNotice ? `<section><div class="banner" role="alert"><h2>השולחן נסגר</h2>
-    <p>המארח סגר את השולחן או שהתנתק, וזה סוף המשחק. אפשר לפתוח שולחן חדש או להצטרף לאחר.</p></div></section>` : ''}
+  ${ui.closedNotice ? `<section><div class="banner" role="alert"><h2>${t('home.closedTitle')}</h2>
+    <p>${t('home.closedText')}</p></div></section>` : ''}
   ${test}
   <section>
-    <label class="field">השם שלך
-      <input id="name" maxlength="16" autocomplete="nickname" placeholder="למשל: דון אלסנדרו" value="${esc(name)}">
+    <label class="field">${t('field.name')}
+      <input id="name" maxlength="16" autocomplete="nickname" placeholder="${t('field.namePh')}" value="${esc(name)}">
     </label>
   </section>
   <section>
-    <h2>הצטרפות לשולחן</h2>
-    <input id="joincode" class="code-input num" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="קוד שולחן" value="${esc(ui.prefillCode || '')}">
-    <button class="primary block" data-act="join">הצטרף</button>
-    <div class="or">או</div>
-    <button class="block" data-act="create">פתח שולחן חדש</button>
+    <h2>${t('home.join')}</h2>
+    <input id="joincode" class="code-input num" inputmode="numeric" maxlength="4" placeholder="0000" aria-label="${t('band.code')}" value="${esc(ui.prefillCode || '')}">
+    <button class="primary block" data-act="join">${t('home.joinBtn')}</button>
+    <div class="or">${t('home.or')}</div>
+    <button class="block" data-act="create">${t('home.create')}</button>
   </section>
-  <p class="disclaimer">אפליקציה לא רשמית, ללא קשר ל־Lui-même. נדרש עותק של המשחק Mafia de Cuba.</p>`;
+  <p class="disclaimer">${t('home.disclaimer')}</p>`;
 }
 
 function readName() {
   const v = ($('#name')?.value || '').trim().slice(0, 16);
-  if (!v) { toast('צריך שם כדי לשבת לשולחן'); $('#name')?.focus(); return null; }
+  if (!v) { toast(t('toast.needName')); $('#name')?.focus(); return null; }
   store.set('mdc.name', v, pidArea());
   return v;
 }
@@ -322,27 +327,27 @@ async function createTable() {
     try {
       if (await sync.exists(c)) continue;
       if (await sync.create(c, newTable(c, pid, name))) { openTable(c, false); return; }
-    } catch (e) { console.error(e); toast('לא הצלחתי לפתוח שולחן. בדקו את החיבור.'); return; }
+    } catch (e) { console.error(e); toast(t('toast.createFail')); return; }
   }
-  toast('לא הצלחתי לפתוח שולחן. נסו שוב.');
+  toast(t('toast.createRetry'));
 }
 
 function joinTable() {
   const name = readName(); if (!name) return;
   const c = ($('#joincode')?.value || '').replace(/\D/g, '');
-  if (c.length !== 4) { toast('הקוד הוא 4 ספרות'); return; }
+  if (c.length !== 4) { toast(t('toast.code4')); return; }
   openTable(c, true);
 }
 
 function viewOutsider() {
   const name = store.get('mdc.name', pidArea()) || '';
   if (game.phase === 'lobby') {
-    return `<section><h2>מצטרף לשולחן…</h2>
-      <label class="field">השם שלך<input id="name" maxlength="16" value="${esc(name)}"></label>
-      <button class="primary block" data-act="joinNow">שב לשולחן</button></section>`;
+    return `<section><h2>${t('out.joining')}</h2>
+      <label class="field">${t('field.name')}<input id="name" maxlength="16" value="${esc(name)}"></label>
+      <button class="primary block" data-act="joinNow">${t('out.sit')}</button></section>`;
   }
   ui.joining = true;
-  return `<section><div class="banner calm"><h2>הסיבוב כבר התחיל</h2><p>תיכנס אוטומטית לסיבוב הבא, כשהמארח יחזיר את כולם ללובי.</p></div></section>`;
+  return `<section><div class="banner calm"><h2>${t('out.started')}</h2><p>${t('out.startedText')}</p></div></section>`;
 }
 
 // ----- lobby -----
@@ -353,62 +358,62 @@ function viewLobby() {
   const rows = s.order.map((id, i) => {
     const p = s.players[id];
     const tags = [
-      id === s.godfatherId ? '<span class="tag gold">סנדק</span>' : '',
-      id === s.hostId ? '<span class="tag">מארח</span>' : '',
+      id === s.godfatherId ? `<span class="tag gold">${t('tag.godfather')}</span>` : '',
+      id === s.hostId ? `<span class="tag">${t('tag.host')}</span>` : '',
     ].join('');
     // Buttons first, drag handle last: the handle sits in the same spot on every row, and rows that lack the
     // crown / kick button simply give that room back to the name instead of leaving an empty gap.
     const ctrls = isHost ? `
-      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="קבע כסנדק">${I.crown}</button>` : ''}
-      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="הוצא מהשולחן">✕</button>` : ''}
-      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="גרור כדי לשנות מקום (או חצים במקלדת)">${I.grip}</span>` : '';
+      ${id !== s.godfatherId ? `<button class="icon ghost" data-act="gf" data-id="${id}" aria-label="${t('aria.setGf')}">${I.crown}</button>` : ''}
+      ${id !== s.hostId ? `<button class="icon ghost" data-act="kick" data-id="${id}" aria-label="${t('aria.kick')}">✕</button>` : ''}
+      <span class="grip" data-drag="${id}" role="button" tabindex="0" aria-label="${t('aria.drag')}">${I.grip}</span>` : '';
     return `<li class="${id === pid ? 'me' : ''}"><span class="seat num">${i + 1}</span><div class="pcell"><span class="pname">${esc(p.name)}</span>${tags}</div>${ctrls}</li>`;
   }).join('');
   const enough = n >= MIN_PLAYERS;
   return `
   <section>
-    <p class="eyebrow">שולחן ${esc(s.code)}${s.round ? ` · סיבוב ${s.round + 1}` : ''}</p>
-    <h2>${n} ${n === 1 ? 'שחקן' : 'שחקנים'} ליד השולחן</h2>
+    <p class="eyebrow">${t('lobby.table', { code: esc(s.code) })}${s.round ? t('lobby.round', { n: s.round + 1 }) : ''}</p>
+    <h2>${t('lobby.count', { n })}</h2>
     <div class="row" style="align-items:flex-start">
-      <div id="qr" style="background:#f3e7cc;border-radius:10px;padding:6px;line-height:0" aria-label="ברקוד להצטרפות"></div>
+      <div id="qr" style="background:#f3e7cc;border-radius:10px;padding:6px;line-height:0" aria-label="${t('lobby.qr')}"></div>
       <div class="stack grow" style="gap:8px">
-        <p class="small muted">סרקו עם המצלמה, או הכנסו לאפליקציה והקלידו את הקוד <b class="num">${esc(s.code)}</b>.</p>
-        <button data-act="copy" data-link="${esc(link)}">העתק קישור</button>
+        <p class="small muted">${t('lobby.scan', { code: esc(s.code) })}</p>
+        <button data-act="copy" data-link="${esc(link)}">${t('lobby.copy')}</button>
       </div>
     </div>
   </section>
-  ${isHost && sync.mode === 'p2p' ? '<p class="notice">הטלפון שלך מחזיק את השולחן. השאירו את האפליקציה פתוחה עד סוף הערב.</p>' : ''}
+  ${isHost && sync.mode === 'p2p' ? `<p class="notice">${t('lobby.hostPhone')}</p>` : ''}
   <section>
-    <h3>מקומות ישיבה</h3>
-    <p class="small muted">${isHost ? 'סדרו לפי הישיבה האמיתית עם כיוון השעון. הקופסה עוברת לפי הסדר הזה, מהשחקן שאחרי הסנדק.' : 'המארח מסדר את המקומות לפי הישיבה ובוחר סנדק.'}</p>
+    <h3>${t('lobby.seats')}</h3>
+    <p class="small muted">${isHost ? t('lobby.seatsHost') : t('lobby.seatsGuest')}</p>
     <ul class="players">${rows}</ul>
   </section>
   ${isHost ? `
   <section>
-    <h3>הגדרות</h3>
-    <label class="switch"><span>לשחק עם המנקה <span class="small muted">(לא מומלץ במשחקים הראשונים)</span></span>
+    <h3>${t('lobby.settings')}</h3>
+    <label class="switch"><span>${t('lobby.cleaner')} <span class="small muted">${t('lobby.cleanerHint')}</span></span>
       <input type="checkbox" id="cleaner" data-act="cleaner" ${s.settings.cleaner ? 'checked' : ''} ${n === 5 ? 'disabled' : ''}></label>
-    <div class="switch"><span>וויסקי לסנדק${n === 5 ? ' <span class="small muted">(במשחק של 5 אין וויסקי)</span>' : ''}</span>
-      <div class="row"><button class="icon" data-act="jokers" data-d="-1" aria-label="פחות">−</button><b class="num" style="min-width:1.5em;text-align:center">${s.settings.jokers}</b><button class="icon" data-act="jokers" data-d="1" aria-label="יותר">+</button></div></div>
+    <div class="switch"><span>${t('lobby.whiskey')}${n === 5 ? ` <span class="small muted">${t('lobby.whiskeyHint')}</span>` : ''}</span>
+      <div class="row"><button class="icon" data-act="jokers" data-d="-1" aria-label="${t('aria.less')}">−</button><b class="num" style="min-width:1.5em;text-align:center">${s.settings.jokers}</b><button class="icon" data-act="jokers" data-d="1" aria-label="${t('aria.more')}">+</button></div></div>
   </section>` : ''}
   <section>
-    <h3>בקופסה יהיו</h3>
-    <div class="row">${I.gem.replace('<svg', '<svg width="22" height="22"')}<b>15 יהלומים</b></div>
+    <h3>${t('lobby.inBox')}</h3>
+    <div class="row">${I.gem.replace('<svg', '<svg width="22" height="22"')}<b>${t('lobby.diamonds15')}</b></div>
     ${preview ? previewChips(preview) : ''}
-    ${n === 5 ? '<p class="notice">משחק של 5 שחקנים קשה יותר ולא מומלץ למשחק ראשון.</p>' : ''}
+    ${n === 5 ? `<p class="notice">${t('lobby.five')}</p>` : ''}
   </section>
   <section>
     ${isHost
-      ? `<button class="primary block" data-act="start" ${enough ? '' : 'disabled'}>${enough ? `התחל סיבוב · ${esc(nameOf(s, s.godfatherId))} הסנדק` : `מחכים לעוד ${MIN_PLAYERS - n} שחקנים לפחות`}</button>`
-      : `<p class="center muted">מחכים ש${esc(nameOf(s, s.hostId))} יתחיל את הסיבוב.</p>`}
+      ? `<button class="primary block" data-act="start" ${enough ? '' : 'disabled'}>${enough ? t('lobby.start', { name: esc(nameOf(s, s.godfatherId)) }) : t('lobby.need', { n: MIN_PLAYERS - n })}</button>`
+      : `<p class="center muted">${t('lobby.waitHost', { name: esc(nameOf(s, s.hostId)) })}</p>`}
   </section>`;
 }
 
-function previewChips(t) {
-  const one = t.fbi + t.cia === 1;
-  const parts = ['henchman', 'driver', 'cleaner'].filter((k) => t[k]).map((k) => chip(k, t[k]));
-  parts.splice(1, 0, one ? `<span class="chip fbi">${I.badge}סוכן FBI או CIA</span>` : chip('fbi', 1) + chip('cia', 1));
-  return `<div class="chips">${parts.join('')}</div>${one ? '<p class="small muted">איזה סוכן ייכנס לקופסה נקבע בהגרלה.</p>' : ''}`;
+function previewChips(tk) {
+  const one = tk.fbi + tk.cia === 1;
+  const parts = ['henchman', 'driver', 'cleaner'].filter((k) => tk[k]).map((k) => chip(k, tk[k]));
+  parts.splice(1, 0, one ? `<span class="chip fbi">${I.badge}${t('chip.agentEither')}</span>` : chip('fbi', 1) + chip('cia', 1));
+  return `<div class="chips">${parts.join('')}</div>${one ? `<p class="small muted">${t('chip.agentNote')}</p>` : ''}`;
 }
 
 function drawQR() {
@@ -426,17 +431,17 @@ function drawQR() {
 function viewSetup() {
   const s = game;
   if (pid !== s.godfatherId) {
-    return `<section><div class="banner calm"><h2>${esc(nameOf(s, s.godfatherId))} מכין את הקופסה</h2>
-      <p>הסנדק מחביא בכיס בין 0 ל־5 יהלומים. בעוד רגע הקופסה תתחיל לעבור.</p></div></section>
-      <section><h3>סדר הקופסה</h3>${seatList(s)}</section>`;
+    return `<section><div class="banner calm"><h2>${t('setup.preparing', { name: esc(nameOf(s, s.godfatherId)) })}</h2>
+      <p>${t('setup.preparingText')}</p></div></section>
+      <section><h3>${t('boxOrder')}</h3>${seatList(s)}</section>`;
   }
   return `<section>
-    <p class="eyebrow">אתה הסנדק</p>
-    <h2>כמה יהלומים להחביא בכיס?</h2>
-    <p class="muted">אף אחד לא יודע כמה החבאת. ככה הגנבים לא יכולים לחשב בדיוק כמה חסר.</p>
-    <div class="stepper"><button data-act="hideN" data-d="-1" aria-label="פחות">−</button><span class="val">${ui.hideN}</span><button data-act="hideN" data-d="1" aria-label="יותר">+</button></div>
-    <p class="center muted num">בקופסה יישארו ${15 - ui.hideN} יהלומים</p>
-    <button class="primary block" data-act="hide">סגור את הקופסה ושלח ל${esc(nameOf(s, takers(s)[0]))}</button>
+    <p class="eyebrow">${t('setup.youGf')}</p>
+    <h2>${t('setup.howMany')}</h2>
+    <p class="muted">${t('setup.nobody')}</p>
+    <div class="stepper"><button data-act="hideN" data-d="-1" aria-label="${t('aria.less')}">−</button><span class="val">${ui.hideN}</span><button data-act="hideN" data-d="1" aria-label="${t('aria.more')}">+</button></div>
+    <p class="center muted num">${t('setup.stay', { n: 15 - ui.hideN })}</p>
+    <button class="primary block" data-act="hide">${t('setup.close', { name: esc(nameOf(s, takers(s)[0])) })}</button>
   </section>`;
 }
 
@@ -445,13 +450,13 @@ function seatList(s, opts = {}) {
   const rows = [s.godfatherId, ...list].map((id) => {
     const tIdx = list.indexOf(id);
     let status = '';
-    if (id === s.godfatherId) status = '<span class="tag gold">סנדק</span>';
-    else if (s.phase === 'theft' && id === holder) status = '<span class="tag red">הקופסה אצלו</span>';
-    else if (s.phase === 'theft' && tIdx < s.turn) status = '<span class="tag">העביר</span>';
-    if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${s.jokersGiven[id]} וויסקי</span>`;
-    if (isOut(s, id)) status += '<span class="tag red">מודח</span>';
+    if (id === s.godfatherId) status = `<span class="tag gold">${t('tag.godfather')}</span>`;
+    else if (s.phase === 'theft' && id === holder) status = `<span class="tag red">${t('seat.box')}</span>`;
+    else if (s.phase === 'theft' && tIdx < s.turn) status = `<span class="tag">${t('seat.passed')}</span>`;
+    if (opts.jokers && s.jokersGiven[id]) status += `<span class="tag teal">${t('seat.whiskey', { n: s.jokersGiven[id] })}</span>`;
+    if (isOut(s, id)) status += `<span class="tag red">${t('seat.out')}</span>`;
     return `<li class="${id === pid ? 'me' : ''} ${isOut(s, id) ? 'out' : ''} ${s.phase === 'theft' && id === holder ? 'holder' : ''}">
-      <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}${id === pid ? ' (אתה)' : ''}</span>${status}</div></li>`;
+      <span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}${id === pid ? t('seat.you') : ''}</span>${status}</div></li>`;
   }).join('');
   return `<ul class="players">${rows}</ul>`;
 }
@@ -459,20 +464,20 @@ function seatList(s, opts = {}) {
 // ----- pocket -----
 function pocket(s) {
   if (pid === s.godfatherId) {
-    return `<div class="pocket open"><div class="rolecard">${roleImg('godfather', 'card')}<div class="grow"><span class="role">${I.crown}הסנדק</span><p class="small">בכיס שלך: <b class="num">${s.hidden}</b> יהלומים שהחבאת. ${roleGoal(s, pid)}</p></div></div></div>`;
+    return `<div class="pocket open"><div class="rolecard">${roleImg('godfather', 'card')}<div class="grow"><span class="role">${I.crown}${roleName('godfather')}</span><p class="small">${t('pocket.gf', { n: s.hidden, goal: roleGoal(s, pid) })}</p></div></div></div>`;
   }
   const take = s.takes[pid];
   if (!take) return '';
   if (!ui.pocket) {
-    return `<div class="pocket" data-hold="pocket" role="button" tabindex="0" aria-label="החזק כדי לראות מה בכיס">
-      <b>הכיס שלי</b><span class="small muted">החזק את האצבע כדי להציץ. שימו לב לשכנים.</span></div>`;
+    return `<div class="pocket" data-hold="pocket" role="button" tabindex="0" aria-label="${t('pocket.hold')}">
+      <b>${t('pocket.title')}</b><span class="small muted">${t('pocket.peek')}</span></div>`;
   }
   const r = roleOf(s, pid);
-  const jokers = s.jokersGiven[pid] ? `<p class="small">${I.bottle.replace('<svg', '<svg width="18" height="18" style="vertical-align:-4px"')} ${s.jokersGiven[pid]} וויסקי מהסנדק</p>` : '';
+  const jokers = s.jokersGiven[pid] ? `<p class="small">${I.bottle.replace('<svg', '<svg width="18" height="18" style="vertical-align:-4px"')} ${t('pocket.whiskey', { n: s.jokersGiven[pid] })}</p>` : '';
   return `<div class="pocket open" data-hold="pocket" role="button" tabindex="0"><div class="rolecard">
     ${roleImg(r, 'card')}
     <div class="grow">
-      <span class="role">${ROLE_ICON[r]}${ROLE_NAME[r]}${r === 'thief' ? ` · <span class="num">${take.n}</span> יהלומים` : ''}</span>
+      <span class="role">${ROLE_ICON[r]}<span>${roleName(r)}${r === 'thief' ? t('pocket.thiefN', { n: take.n }) : ''}</span></span>
       ${r === 'thief' ? gems(take.n) : ''}
       <p class="small">${roleGoal(s, pid)}</p>${jokers}
     </div></div>
@@ -487,60 +492,60 @@ function viewTheft() {
   if (holder !== pid) {
     const myIdx = takers(s).indexOf(pid);
     const ahead = myIdx - s.turn;
-    const note = myIdx < 0 ? '' : ahead > 0 ? `<p class="muted">${ahead === 1 ? 'אתה הבא בתור.' : `עוד ${ahead} שחקנים לפניך.`}</p>` : '';
-    return `<section><div class="banner calm"><p class="eyebrow">גניבת היהלומים</p><h2>הקופסה אצל ${esc(nameOf(s, holder))}</h2>${note}</div></section>
+    const note = myIdx < 0 ? '' : ahead > 0 ? `<p class="muted">${ahead === 1 ? t('theft.next') : t('theft.ahead', { n: ahead })}</p>` : '';
+    return `<section><div class="banner calm"><p class="eyebrow">${t('theft.eyebrow')}</p><h2>${t('theft.boxWith', { name: esc(nameOf(s, holder)) })}</h2>${note}</div></section>
       ${s.takes[pid] || pid === s.godfatherId ? `<section>${pocket(s)}</section>` : ''}
-      <section><h3>סדר הקופסה</h3>${seatList(s)}</section>`;
+      <section><h3>${t('boxOrder')}</h3>${seatList(s)}</section>`;
   }
-  return `<section><p class="eyebrow">תורך · ${s.turn + 1} מתוך ${takers(s).length}</p>${boxView(s)}</section>`;
+  return `<section><p class="eyebrow">${t('theft.yourTurn', { n: s.turn + 1, total: takers(s).length })}</p>${boxView(s)}</section>`;
 }
 
 function boxView(s) {
   const box = s.box;
   if (!ui.boxOpen) {
-    return `<div class="box closed"><span class="label">קופסת הסנדק</span>
-      <h2>הקופסה אצלך</h2><p class="muted">תסתיר את המסך מהשכנים, ותפתח.</p>
-      <button class="primary block" data-act="openBox">פתח את הקופסה</button></div>`;
+    return `<div class="box closed"><span class="label">${t('box.label')}</span>
+      <h2>${t('box.yours')}</h2><p class="muted">${t('box.hide')}</p>
+      <button class="primary block" data-act="openBox">${t('box.open')}</button></div>`;
   }
   const list = takers(s);
   const last = s.turn === list.length - 1;
-  const anyTokens = TOKEN_TYPES.some((t) => box.tokens[t] > 0);
+  const anyTokens = TOKEN_TYPES.some((tk) => box.tokens[tk] > 0);
   const contents = `<div class="gems"><span class="count num">${box.diamonds}</span>${I.gem}</div>${gems(box.diamonds)}
-    <div><p class="small muted" style="margin-bottom:6px">טוקנים בקופסה</p>${tokenChips(box.tokens)}</div>
-    <p class="small muted">תזכור מה ראית: אחר כך תצטרך להעיד, או לשקר בצורה משכנעת.</p>`;
+    <div><p class="small muted" style="margin-bottom:6px">${t('box.tokens')}</p>${tokenChips(box.tokens)}</div>
+    <p class="small muted">${t('box.remember')}</p>`;
 
   if (boxEmpty(box)) {
-    return `<div class="box lid-open"><span class="label">קופסת הסנדק</span>${contents}
-      <div class="banner"><h3>הקופסה ריקה. אתה ילד רחוב.</h3><p>תעמיד פנים שאתה לוקח משהו, ותעביר הלאה.</p></div>
-      <button class="primary block" data-act="takeNothing">העמדתי פנים. העבר הלאה</button></div>`;
+    return `<div class="box lid-open"><span class="label">${t('box.label')}</span>${contents}
+      <div class="banner"><h3>${t('box.emptyTitle')}</h3><p>${t('box.emptyText')}</p></div>
+      <button class="primary block" data-act="takeNothing">${t('box.pretended')}</button></div>`;
   }
   if (s.turn === 0 && !s.bagDone && anyTokens) {
-    const opts = TOKEN_TYPES.filter((t) => box.tokens[t] > 0).map((t) => `<button data-act="bag" data-token="${t}">${TOKEN_ICON[t]}${TOKEN_NAME[t]}</button>`).join('');
-    return `<div class="box lid-open"><span class="label">קופסת הסנדק</span>${contents}</div>
-      <div class="stack"><h3>השקית: רק לשחקן הראשון</h3>
-      <p class="small muted">אפשר להעלים טוקן אחד לשקית עד סוף המשחק. אף אחד לא יידע איזה. אחר כך לוקחים כרגיל.</p>
+    const opts = TOKEN_TYPES.filter((tk) => box.tokens[tk] > 0).map((tk) => `<button data-act="bag" data-token="${tk}">${TOKEN_ICON[tk]}${roleName(tk)}</button>`).join('');
+    return `<div class="box lid-open"><span class="label">${t('box.label')}</span>${contents}</div>
+      <div class="stack"><h3>${t('bag.title')}</h3>
+      <p class="small muted">${t('bag.text')}</p>
       <div class="choice">${opts}</div>
-      <button class="block ghost" data-act="bag" data-token="">לא להעלים כלום</button></div>`;
+      <button class="block ghost" data-act="bag" data-token="">${t('bag.none')}</button></div>`;
   }
   const pick = ui.pick;
-  const tokenBtns = TOKEN_TYPES.filter((t) => box.tokens[t] > 0).map((t) =>
-    `<button data-act="pickToken" data-token="${t}" class="${pick && pick.kind === 'token' && pick.token === t ? 'chosen' : ''}">${TOKEN_ICON[t]}${TOKEN_NAME[t]}</button>`).join('');
+  const tokenBtns = TOKEN_TYPES.filter((tk) => box.tokens[tk] > 0).map((tk) =>
+    `<button data-act="pickToken" data-token="${tk}" class="${pick && pick.kind === 'token' && pick.token === tk ? 'chosen' : ''}">${TOKEN_ICON[tk]}${roleName(tk)}</button>`).join('');
   const dChosen = pick && pick.kind === 'diamonds';
-  let confirm = 'בחר מה לקחת';
-  if (pick) confirm = pick.kind === 'diamonds' ? `קח ${ui.pickN} ${ui.pickN === 1 ? 'יהלום' : 'יהלומים'} והעבר` : pick.kind === 'token' ? `קח ${TOKEN_NAME[pick.token]} והעבר` : 'לא לקחת כלום והעבר';
-  const next = s.turn + 1 < list.length ? nameOf(s, list[s.turn + 1]) : 'הסנדק';
-  return `<div class="box lid-open"><span class="label">קופסת הסנדק</span>${contents}</div>
+  let confirm = t('take.choose');
+  if (pick) confirm = pick.kind === 'diamonds' ? t('take.diamonds', { n: ui.pickN }) : pick.kind === 'token' ? t('take.token', { token: roleName(pick.token) }) : t('take.nothing');
+  const nextId = s.turn + 1 < list.length ? list[s.turn + 1] : null;
+  return `<div class="box lid-open"><span class="label">${t('box.label')}</span>${contents}</div>
   <div class="stack">
-    <h3>מה לוקחים? חובה לקחת משהו</h3>
+    <h3>${t('take.title')}</h3>
     ${box.diamonds > 0 ? `<div class="stack" style="gap:8px">
-      <button class="block ${dChosen ? 'chosen' : ''}" data-act="pickDiamonds">${I.gem.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px"')} יהלומים (לפחות אחד)</button>
-      ${dChosen ? `<div class="slider"><span class="val" id="pickval">${ui.pickN}</span>${box.diamonds > 1 ? `<input type="range" id="pickrange" dir="ltr" min="1" max="${box.diamonds}" step="1" value="${ui.pickN}" style="--p:${(ui.pickN - 1) / (box.diamonds - 1) * 100}%" aria-label="כמה יהלומים לקחת"><div class="ends num" dir="ltr"><span>1</span><span>${box.diamonds}</span></div>` : ''}</div>` : ''}
+      <button class="block ${dChosen ? 'chosen' : ''}" data-act="pickDiamonds">${I.gem.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px"')} ${t('take.diamondsBtn')}</button>
+      ${dChosen ? `<div class="slider"><span class="val" id="pickval">${ui.pickN}</span>${box.diamonds > 1 ? `<input type="range" id="pickrange" dir="ltr" min="1" max="${box.diamonds}" step="1" value="${ui.pickN}" style="--p:${(ui.pickN - 1) / (box.diamonds - 1) * 100}%" aria-label="${t('take.howMany')}"><div class="ends num" dir="ltr"><span>1</span><span>${box.diamonds}</span></div>` : ''}</div>` : ''}
     </div>` : ''}
-    ${tokenBtns ? `<p class="small muted">או טוקן אחד:</p><div class="choice">${tokenBtns}</div>` : ''}
-    ${last ? `<button class="block ghost ${pick && pick.kind === 'nothing' ? 'chosen' : ''}" data-act="pickNothing">${I.cap.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px;color:var(--muted)"')} לא לקחת כלום (ילד רחוב)</button>
-      <p class="small muted">אתה האחרון, אז מותר לך לא לקחת כלום. רק תעמיד פנים שכן.</p>` : ''}
+    ${tokenBtns ? `<p class="small muted">${t('take.orToken')}</p><div class="choice">${tokenBtns}</div>` : ''}
+    ${last ? `<button class="block ghost ${pick && pick.kind === 'nothing' ? 'chosen' : ''}" data-act="pickNothing">${I.cap.replace('<svg', '<svg width="22" height="22" style="vertical-align:-5px;color:var(--muted)"')} ${t('take.urchinBtn')}</button>
+      <p class="small muted">${t('take.urchinNote')}</p>` : ''}
     <button class="primary block" data-act="take" ${pick ? '' : 'disabled'}>${confirm}</button>
-    <p class="small muted center">הקופסה תעבור ל${esc(next)}</p>
+    <p class="small muted center">${nextId ? t('take.passTo', { name: esc(nameOf(s, nextId)) }) : t('take.passToGf')}</p>
   </div>`;
 }
 
@@ -550,66 +555,66 @@ function viewInvestigation() {
   const isGf = pid === s.godfatherId;
   const out = isOut(s, pid);
   const publicStats = `<div class="stats">
-      <div class="stat"><b class="num">${s.recovered}</b><span>יהלומים הוחזרו</span></div>
-      <div class="stat"><b class="num">${s.jokers}</b><span>וויסקי לסנדק</span></div>
-      <div class="stat"><b class="num">${s.order.filter((id) => isOut(s, id)).length}</b><span>מודחים</span></div></div>`;
-  const logHtml = s.log.length ? `<section><h3>מה קרה עד עכשיו</h3><ul class="log">${s.log.slice().reverse().map(logLine).join('')}</ul></section>` : '';
+      <div class="stat"><b class="num">${s.recovered}</b><span>${t('inv.diamondsBack')}</span></div>
+      <div class="stat"><b class="num">${s.jokers}</b><span>${t('inv.whiskeyGf')}</span></div>
+      <div class="stat"><b class="num">${s.order.filter((id) => isOut(s, id)).length}</b><span>${t('inv.outCount')}</span></div></div>`;
+  const logHtml = s.log.length ? `<section><h3>${t('inv.log')}</h3><ul class="log">${s.log.slice().reverse().map(logLine).join('')}</ul></section>` : '';
 
   if (isGf) {
     const left = s.box.diamonds;
     const rows = takers(s).map((id) => {
       const outP = isOut(s, id);
       const cleared = !!s.jokersGiven[id]; // already accused and found innocent: accusing again is not allowed
-      const j = s.jokersGiven[id] ? `<span class="tag teal">${s.jokersGiven[id]} וויסקי</span>` : '';
+      const j = s.jokersGiven[id] ? `<span class="tag teal">${t('seat.whiskey', { n: s.jokersGiven[id] })}</span>` : '';
       return `<li class="${outP ? 'out' : ''}"><span class="seat num">${s.order.indexOf(id) + 1}</span><div class="pcell"><span class="pname">${esc(nameOf(s, id))}</span>${j}</div>
-        ${outP ? '<span class="tag red">מודח</span>' : cleared ? '<span class="tag">נוקה</span>' : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">האשם</button>`}</li>`;
+        ${outP ? `<span class="tag red">${t('seat.out')}</span>` : cleared ? `<span class="tag">${t('inv.cleared')}</span>` : `<button class="danger" style="min-height:40px;padding:6px 12px" data-act="accuse" data-id="${id}">${t('inv.accuse')}</button>`}</li>`;
     }).join('');
     return `<section>
-      <p class="eyebrow">החקירה · אתה הסנדק</p>
+      <p class="eyebrow">${t('inv.eyebrowGf')}</p>
       <div class="stats">
-        <div class="stat"><b class="num">${s.stolen}</b><span>נגנבו</span></div>
-        <div class="stat"><b class="num">${s.recovered}</b><span>הוחזרו</span></div>
-        <div class="stat"><b class="num">${s.jokers}</b><span>וויסקי</span></div>
+        <div class="stat"><b class="num">${s.stolen}</b><span>${t('inv.stolen')}</span></div>
+        <div class="stat"><b class="num">${s.recovered}</b><span>${t('inv.recovered')}</span></div>
+        <div class="stat"><b class="num">${s.jokers}</b><span>${t('inv.whiskey')}</span></div>
       </div>
-      <div class="box"><span class="label">מה חזר בקופסה</span>
+      <div class="box"><span class="label">${t('inv.cameBack')}</span>
         <div class="gems"><span class="count num">${left}</span>${I.gem}</div>
         ${tokenChips(s.box.tokens)}
-        <p class="small muted">החבאת בכיס ${s.hidden}. בהתחלה היו 15.</p>
+        <p class="small muted">${t('inv.hid', { n: s.hidden })}</p>
       </div>
     </section>
     <section>
-      <h3>חקור ואז האשם</h3>
-      <p class="small muted">שאלו בקול, ליד השולחן. כשאתה בטוח, לחץ "האשם" כדי לצעוק "רוקן את הכיסים!".</p>
+      <h3>${t('inv.investigate')}</h3>
+      <p class="small muted">${t('inv.investigateText')}</p>
       <ul class="players">${rows}</ul>
-      <details><summary>שאלות טובות לשאול</summary><ul>
-        <li>כשקיבלת את הקופסה, כמה יהלומים היו בה?</li>
-        <li>אילו טוקנים היו בה?</li>
-        <li>מה השארת כשהעברת הלאה?</li>
-        <li>מה לקחת?</li>
-        <li>מי ישב לפניך, ומה הוא אמר שהיה בקופסה?</li>
+      <details><summary>${t('inv.goodQ')}</summary><ul>
+        <li>${t('inv.q1')}</li>
+        <li>${t('inv.q2')}</li>
+        <li>${t('inv.q3')}</li>
+        <li>${t('inv.q4')}</li>
+        <li>${t('inv.q5')}</li>
       </ul></details>
     </section>${logHtml}`;
   }
-  return `${out ? `<section><div class="silenced"><h2>הודחת</h2><p>מעכשיו אסור לך לדבר או להשתתף בחקירה.</p></div></section>` : ''}
-    <section><p class="eyebrow">החקירה</p>
-      <h2>${esc(nameOf(s, s.godfatherId))} חוקר</h2>
-      <p class="muted small">ענו בקול. מותר לשקר, להגזים, לשתוק או לסלף מה שאחרים אמרו.</p>
+  return `${out ? `<section><div class="silenced"><h2>${t('inv.youOut')}</h2><p>${t('inv.youOutText')}</p></div></section>` : ''}
+    <section><p class="eyebrow">${t('inv.eyebrow')}</p>
+      <h2>${t('inv.investigating', { name: esc(nameOf(s, s.godfatherId)) })}</h2>
+      <p class="muted small">${t('inv.answer')}</p>
       ${publicStats}
     </section>
     <section>${pocket(s)}</section>
-    <section><h3>ליד השולחן</h3>${seatList(s, { jokers: true })}</section>
+    <section><h3>${t('inv.atTable')}</h3>${seatList(s, { jokers: true })}</section>
     ${logHtml}`;
 }
 
 function logLine(e) {
   const s = game, who = esc(nameOf(s, e.target));
   switch (e.outcome) {
-    case 'thief': return `<li class="thief">${who} נתפס עם ${e.n} יהלומים והודח.</li>`;
-    case 'innocent': return `<li class="innocent">${who} הואשם, אבל ${e.role === 'urchin' ? 'הכיסים שלו ריקים' : `הוא ${ROLE_NAME[e.role]}`}. קיבל וויסקי.</li>`;
-    case 'agent': return `<li class="bad">${who} הוא ${ROLE_NAME[e.role]}.</li>`;
-    case 'godfatherOut': return `<li class="bad">${who} נקי, ולסנדק נגמר הוויסקי.</li>`;
-    case 'pow': return `<li class="bad">POW! ${esc(nameOf(s, e.by))} ירה ב${who} (${e.role === 'thief' ? `גנב, ${e.n} יהלומים חזרו` : e.role === 'urchin' ? 'כיסים ריקים' : ROLE_NAME[e.role]}). שניהם הודחו.</li>`;
-    case 'powAgent': return `<li class="bad">POW! ${esc(nameOf(s, e.by))} חיסל את ${who}, ${ROLE_NAME[e.role]}.</li>`;
+    case 'thief': return `<li class="thief">${t('log.thief', { who, n: e.n })}</li>`;
+    case 'innocent': return `<li class="innocent">${e.role === 'urchin' ? t('log.innocentUrchin', { who }) : t('log.innocentRole', { who, role: roleA(e.role) })}</li>`;
+    case 'agent': return `<li class="bad">${t('log.agent', { who, role: roleA(e.role) })}</li>`;
+    case 'godfatherOut': return `<li class="bad">${t('log.godfatherOut', { who })}</li>`;
+    case 'pow': return `<li class="bad">${t('log.pow', { by: esc(nameOf(s, e.by)), who, what: e.role === 'thief' ? t('log.powThief', { n: e.n }) : e.role === 'urchin' ? t('log.powUrchin') : roleA(e.role) })}</li>`;
+    case 'powAgent': return `<li class="bad">${t('log.powAgent', { by: esc(nameOf(s, e.by)), who, role: roleA(e.role) })}</li>`;
     default: return '';
   }
 }
@@ -619,38 +624,38 @@ function viewEnd() {
   const s = game, r = s.result || { winners: [] };
   const winners = new Set(r.winners);
   const titles = {
-    godfather: ['הסנדק החזיר את כל היהלומים', 'הסנדק, החיילים הנאמנים והמנקה מנצחים.'],
-    agent: ['הסנדק האשים סוכן', 'הסוכן מנצח לבד.'],
-    cleaner: ['POW! המנקה חיסל סוכן', 'המנקה מנצח לבד.'],
-    thieves: ['הסנדק הודח', winners.size ? 'הגנב עם הכי הרבה יהלומים מנצח, ואיתו ילדי הרחוב.' : 'לא נשאר גנב במשחק, אז אף גנב לא מנצח.'],
-  }[r.type] || ['הסיבוב נגמר', ''];
+    godfather: [t('end.gf1'), t('end.gf2')],
+    agent: [t('end.agent1'), t('end.agent2')],
+    cleaner: [t('end.cleaner1'), t('end.cleaner2')],
+    thieves: [t('end.thieves1'), winners.size ? t('end.thieves2') : t('end.thieves2none')],
+  }[r.type] || [t('end.over'), ''];
   const iWon = winners.has(pid);
-  const wnames = r.winners.map((id) => esc(nameOf(s, id))).join(', ') || 'אף אחד';
+  const wnames = r.winners.map((id) => esc(nameOf(s, id))).join(', ') || t('end.nobody');
   const rows = s.order.map((id) => {
     const role = roleOf(s, id);
-    const t = s.takes[id];
-    const take = id === s.godfatherId ? `החביא ${s.hidden}` : t && t.kind === 'diamonds' ? `${t.n} יהלומים` : '';
+    const tk = s.takes[id];
+    const take = id === s.godfatherId ? t('end.hid', { n: s.hidden }) : tk && tk.kind === 'diamonds' ? t('nDiamonds', { n: tk.n }) : '';
     return `<tr class="${winners.has(id) ? 'win' : ''}"><td class="num">${s.order.indexOf(id) + 1}</td>
-      <td><b>${esc(nameOf(s, id))}</b>${isOut(s, id) ? ' <span class="tag red">מודח</span>' : ''}</td>
-      <td>${role ? `<span class="rolecell">${roleImg(role, 'tiny')}${ROLE_NAME[role]}</span>` : '—'}</td><td class="num">${esc(take)}</td><td>${winners.has(id) ? '<span class="tag ok">ניצח</span>' : ''}</td></tr>`;
+      <td><b>${esc(nameOf(s, id))}</b>${isOut(s, id) ? ` <span class="tag red">${t('seat.out')}</span>` : ''}</td>
+      <td>${role ? `<span class="rolecell">${roleImg(role, 'tiny')}${roleName(role)}</span>` : '—'}</td><td class="num">${esc(take)}</td><td>${winners.has(id) ? `<span class="tag ok">${t('end.won')}</span>` : ''}</td></tr>`;
   }).join('');
   const isHost = pid === s.hostId;
   const order = [...r.winners, ...s.order.filter((id) => !winners.has(id))];
   if (!ui.newGf || !s.players[ui.newGf]) ui.newGf = r.winners.find((id) => s.players[id]) || s.godfatherId;
   return `<section>
-    <div class="banner"><p class="eyebrow" style="color:var(--gold-hi)">סוף הסיבוב</p><h2>${titles[0]}</h2><p>${titles[1]}</p></div>
-    <div class="banner calm"><h3>${iWon ? 'ניצחת!' : 'הפעם לא ניצחת'}</h3><p>מנצחים: ${wnames}</p></div>
+    <div class="banner"><p class="eyebrow" style="color:var(--gold-hi)">${t('end.eyebrow')}</p><h2>${titles[0]}</h2><p>${titles[1]}</p></div>
+    <div class="banner calm"><h3>${iWon ? t('end.youWon') : t('end.youLost')}</h3><p>${t('end.winners', { names: wnames })}</p></div>
   </section>
-  <section><h3>מה היה לכל אחד</h3>
+  <section><h3>${t('end.whatEach')}</h3>
     <div class="tablewrap"><table class="reveal"><tbody>${rows}</tbody></table></div>
-    <p class="small muted">בשקית: ${s.bag ? TOKEN_NAME[s.bag] : 'כלום'} · נשארו בקופסה ${s.box ? s.box.diamonds : 0} יהלומים</p>
+    <p class="small muted">${t('end.bag', { bag: s.bag ? roleName(s.bag) : t('end.bagNone'), n: s.box ? s.box.diamonds : 0 })}</p>
   </section>
-  ${s.log.length ? `<section><h3>החקירה</h3><ul class="log">${s.log.map(logLine).join('')}</ul></section>` : ''}
+  ${s.log.length ? `<section><h3>${t('end.investigation')}</h3><ul class="log">${s.log.map(logLine).join('')}</ul></section>` : ''}
   <section>
-    ${isHost ? `<h3>סיבוב חדש</h3><p class="small muted">המנצחים בוחרים את הסנדק הבא. אפשר גם להחליף מקומות בלובי.</p>
-      <label class="field">הסנדק הבא<select id="newgf" data-act="newgf">${order.map((id) => `<option value="${id}" ${id === ui.newGf ? 'selected' : ''}>${esc(nameOf(s, id))}${winners.has(id) ? ' (ניצח)' : ''}</option>`).join('')}</select></label>
-      <button class="primary block" data-act="newRound">חזרה ללובי</button>`
-      : `<p class="center muted">${esc(nameOf(s, s.hostId))} יפתח סיבוב חדש.</p>`}
+    ${isHost ? `<h3>${t('end.newRound')}</h3><p class="small muted">${t('end.newRoundText')}</p>
+      <label class="field">${t('end.nextGf')}<select id="newgf" data-act="newgf">${order.map((id) => `<option value="${id}" ${id === ui.newGf ? 'selected' : ''}>${esc(nameOf(s, id))}${winners.has(id) ? t('end.wonSuffix') : ''}</option>`).join('')}</select></label>
+      <button class="primary block" data-act="newRound">${t('end.backLobby')}</button>`
+      : `<p class="center muted">${t('end.hostNew', { name: esc(nameOf(s, s.hostId)) })}</p>`}
   </section>`;
 }
 
@@ -671,12 +676,12 @@ function renderOverlay() {
 
 function confirmAccuseSheet() {
   const s = game, id = ui.accuseTarget;
-  const cost = s.jokers > 0 ? `אם הוא לא גנב, תצטרך לתת לו וויסקי (נשארו לך ${s.jokers}). אם הוא סוכן, הפסדת.` : 'לא נשאר לך וויסקי: אם הוא לא גנב, אתה מודח. אם הוא סוכן, הפסדת.';
+  const cost = s.jokers > 0 ? t('acc.costJokers', { n: s.jokers }) : t('acc.costNone');
   return `<div class="sheet accuse" role="dialog" aria-modal="true">
     <p class="who">${esc(nameOf(s, id))}</p>
     <p class="muted small">${cost}</p>
-    <button class="danger block" style="font-family:var(--font-display);font-size:1.5rem;min-height:72px" data-act="confirmAccuse">רוקן את הכיסים!</button>
-    <button class="ghost block" data-act="cancelAccuse">עוד לא</button></div>`;
+    <button class="danger block" style="font-family:var(--font-display);font-size:1.5rem;min-height:72px" data-act="confirmAccuse">${t('acc.cry')}</button>
+    <button class="ghost block" data-act="cancelAccuse">${t('acc.notYet')}</button></div>`;
 }
 
 function accusationSheet() {
@@ -684,10 +689,10 @@ function accusationSheet() {
   const amCleaner = roleOf(s, pid) === 'cleaner' && !isOut(s, pid) && acc.target !== pid;
   const isTarget = acc.target === pid;
   return `<div class="sheet accuse" role="dialog" aria-modal="true">
-    <p class="muted">${esc(nameOf(s, s.godfatherId))} מאשים את</p>
-    <p class="who">${isTarget ? 'אותך!' : esc(nameOf(s, acc.target))}</p>
-    <p class="cry">רוקן את הכיסים!</p>
-    ${amCleaner ? '<button class="pow" data-act="pow">POW!</button><p class="small muted">יש לך רגע אחד לפני שהכיסים מתרוקנים.</p>' : '<p class="count-ring num" id="countdown">…</p>'}
+    <p class="muted">${t('acc.accuses', { name: esc(nameOf(s, s.godfatherId)) })}</p>
+    <p class="who">${isTarget ? t('acc.you') : esc(nameOf(s, acc.target))}</p>
+    <p class="cry">${t('acc.cry')}</p>
+    ${amCleaner ? `<button class="pow" data-act="pow">${t('acc.pow')}</button><p class="small muted">${t('acc.powNote')}</p>` : '<p class="count-ring num" id="countdown">…</p>'}
   </div>`;
 }
 function updateCountdown() {
@@ -701,57 +706,57 @@ function revealSheet() {
   if (!ui.revealAt || ui.revealFor !== e.seq) { ui.revealAt = Date.now(); ui.revealFor = e.seq; }
   const who = esc(nameOf(s, e.target));
   if (Date.now() - ui.revealAt < 1400) {
-    return `<div class="sheet accuse"><p class="who">${who}</p><p class="muted">מרוקן את הכיסים…</p><p class="suspense">• • •</p></div>`;
+    return `<div class="sheet accuse"><p class="who">${who}</p><p class="muted">${t('rev.emptying')}</p><p class="suspense">• • •</p></div>`;
   }
   const by = e.by ? esc(nameOf(s, e.by)) : '';
   let v = '', cls = 'gold', sub = '';
   switch (e.outcome) {
-    case 'thief': v = `גנב! ${e.n} יהלומים`; sub = `${who} מודח. היהלומים חזרו לסנדק.`; break;
-    case 'innocent': v = e.role === 'urchin' ? 'הכיסים ריקים' : `${who} הוא ${ROLE_NAME[e.role]}`; cls = 'good'; sub = `הסנדק טעה ונותן ל${who} וויסקי. נשארו לו ${e.jokersLeft}.`; break;
-    case 'agent': v = `${ROLE_NAME[e.role]}!`; cls = 'bad'; sub = `${who} היה סוכן סמוי. הסוכן מנצח.`; break;
-    case 'godfatherOut': v = 'הסנדק מודח'; cls = 'bad'; sub = `${who} ${e.role === 'urchin' ? 'עם כיסים ריקים' : `הוא ${ROLE_NAME[e.role]}`}, ולסנדק אין יותר וויסקי.`; break;
-    case 'pow': v = 'POW!'; cls = 'bad'; sub = `${by} ירה ב${who}${e.role === 'thief' ? `, שהיה גנב עם ${e.n} יהלומים. היהלומים חזרו לסנדק` : `, שהיה ${e.role === 'urchin' ? 'ילד רחוב' : ROLE_NAME[e.role]}`}. שניהם מודחים.`; break;
-    case 'powAgent': v = 'POW! סוכן חוסל'; cls = 'gold'; sub = `${by} הוא המנקה, ו${who} היה ${ROLE_NAME[e.role]}. המנקה מנצח לבד.`; break;
+    case 'thief': v = t('rev.thiefV', { n: e.n }); sub = t('rev.thiefSub', { who, n: e.n }); break;
+    case 'innocent': v = e.role === 'urchin' ? t('rev.emptyPockets') : t('rev.whoIs', { who, role: roleA(e.role) }); cls = 'good'; sub = t('rev.innocentSub', { who, n: e.jokersLeft }); break;
+    case 'agent': v = t('rev.agentV', { role: roleName(e.role) }); cls = 'bad'; sub = t('rev.agentSub', { who }); break;
+    case 'godfatherOut': v = t('rev.gfOutV'); cls = 'bad'; sub = e.role === 'urchin' ? t('rev.gfOutPockets', { who }) : t('rev.gfOutRole', { who, role: roleA(e.role) }); break;
+    case 'pow': v = 'POW!'; cls = 'bad'; sub = t('rev.powSub', { by, who, what: e.role === 'thief' ? t('rev.powThief', { n: e.n }) : t('rev.powOther', { role: e.role === 'urchin' ? t('rev.powUrchin') : roleA(e.role) }) }); break;
+    case 'powAgent': v = t('rev.powAgentV'); cls = 'gold'; sub = t('rev.powAgentSub', { by, who, role: roleA(e.role) }); break;
   }
   $('#overlay').dataset.shown = '1';
   return `<div class="sheet accuse" role="dialog" aria-modal="true"><p class="muted">${who}</p>
     ${e.role ? roleImg(e.role, 'big') : ''}
     <p class="verdict ${cls}">${v}</p><p>${sub}</p>
-    <button class="primary block" data-act="closeReveal">המשך</button></div>`;
+    <button class="primary block" data-act="closeReveal">${t('rev.continue')}</button></div>`;
 }
 
 function menuSheet() {
   const isHost = game && pid === game.hostId;
   const mid = game && game.phase !== 'lobby' && game.phase !== 'end';
   return `<div class="sheet" role="dialog" aria-modal="true">
-    <h2>תפריט</h2>
-    <label class="field">השם שלך<input id="rename" maxlength="16" value="${esc(store.get('mdc.name', pidArea()) || '')}"></label>
-    ${isHost ? `<label class="field">זמן חיים להודעות בצ'אט (בשניות)<input id="chattl" type="number" inputmode="numeric" min="${MIN_CHAT_TTL}" max="${MAX_CHAT_TTL}" value="${game.settings.chatTtl}"></label>
-    <label class="field">השהייה בין הודעות של אותו שחקן (בשניות, 0 = בלי הגבלה)<input id="chatcd" type="number" inputmode="numeric" min="${MIN_CHAT_COOLDOWN}" max="${MAX_CHAT_COOLDOWN}" value="${game.settings.chatCooldown}"></label>` : ''}
-    <button class="primary" data-act="saveMenu">שמור</button>
-    ${isHost && mid ? '<button class="danger" data-act="abort">בטל את הסיבוב וחזור ללובי</button>' : ''}
+    <h2>${t('menu.title')}</h2>
+    <label class="field">${t('field.name')}<input id="rename" maxlength="16" value="${esc(store.get('mdc.name', pidArea()) || '')}"></label>
+    ${isHost ? `<label class="field">${t('menu.chatTtl')}<input id="chattl" type="number" inputmode="numeric" min="${MIN_CHAT_TTL}" max="${MAX_CHAT_TTL}" value="${game.settings.chatTtl}"></label>
+    <label class="field">${t('menu.chatCd')}<input id="chatcd" type="number" inputmode="numeric" min="${MIN_CHAT_COOLDOWN}" max="${MAX_CHAT_COOLDOWN}" value="${game.settings.chatCooldown}"></label>` : ''}
+    <button class="primary" data-act="saveMenu">${t('menu.save')}</button>
+    ${isHost && mid ? `<button class="danger" data-act="abort">${t('menu.abort')}</button>` : ''}
     ${isHost && sync.mode === 'p2p'
-      ? '<p class="small muted">אתה המארח: הטלפון שלך מחזיק את השולחן. אם תסגור אותו, המשחק ייגמר לכולם.</p><button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>'
-      : (isHost && sync.mode === 'server' ? '<button class="ghost" data-act="closeTable">סגור את השולחן לכולם</button>' : '') + '<button class="ghost" data-act="leave">צא מהשולחן</button>'}
-    <button class="ghost" data-act="closeSheet">סגור</button></div>`;
+      ? `<p class="small muted">${t('menu.hostNote')}</p><button class="ghost" data-act="closeTable">${t('menu.closeTable')}</button>`
+      : (isHost && sync.mode === 'server' ? `<button class="ghost" data-act="closeTable">${t('menu.closeTable')}</button>` : '') + `<button class="ghost" data-act="leave">${t('menu.leave')}</button>`}
+    <button class="ghost" data-act="closeSheet">${t('menu.close')}</button></div>`;
 }
 
 // One save for everything in the menu: the name, and for the host the chat settings. Everything is checked first,
 // and only what changed is sent. If a send fails, the menu stays open with the typed values.
 async function saveMenu() {
   const name = ($('#rename')?.value || '').trim().slice(0, 16);
-  if (!name) { toast('צריך שם'); $('#rename')?.focus(); return; }
+  if (!name) { toast(t('toast.needName2')); $('#rename')?.focus(); return; }
   const me = game && game.players[pid];
   const isHost = game && pid === game.hostId;
   const jobs = [];
   if (isHost) {
     const field = (id, min, max, label) => {
       const raw = ($(id)?.value || '').trim(), v = Math.round(+raw);
-      if (raw === '' || !(v >= min && v <= max)) { toast(`${label} צריך להיות בין ${min} ל־${max} שניות`); $(id)?.focus(); return null; }
+      if (raw === '' || !(v >= min && v <= max)) { toast(t('menu.range', { label, min, max })); $(id)?.focus(); return null; }
       return v;
     };
-    const ttl = field('#chattl', MIN_CHAT_TTL, MAX_CHAT_TTL, 'זמן החיים של ההודעות'); if (ttl === null) return;
-    const cooldown = field('#chatcd', MIN_CHAT_COOLDOWN, MAX_CHAT_COOLDOWN, 'ההשהייה בין הודעות'); if (cooldown === null) return;
+    const ttl = field('#chattl', MIN_CHAT_TTL, MAX_CHAT_TTL, t('menu.ttlLabel')); if (ttl === null) return;
+    const cooldown = field('#chatcd', MIN_CHAT_COOLDOWN, MAX_CHAT_COOLDOWN, t('menu.cdLabel')); if (cooldown === null) return;
     if (ttl !== game.settings.chatTtl || cooldown !== game.settings.chatCooldown) jobs.push({ type: 'chatSettings', ttl, cooldown });
   }
   const renamed = name !== (store.get('mdc.name', pidArea()) || '') || (me && me.name !== name);
@@ -760,43 +765,14 @@ async function saveMenu() {
   for (const a of jobs) if (!(await act(a))) return;
   ui.menu = false;
   render();
-  if (renamed || jobs.length) toast('נשמר');
+  if (renamed || jobs.length) toast(t('toast.saved'));
 }
 
 function rulesSheet() {
-  return `<div class="sheet rules" role="dialog" aria-modal="true" aria-label="חוקים">
-    <h2>איך משחקים</h2>
-    <p>משחק בלופים ל־6 עד 12 שחקנים. הטלפון מחליף רק את הקופסה, היהלומים והטוקנים. כל השאר קורה בקול סביב השולחן.</p>
-    <h3>1. ההכנה</h3>
-    <ul><li>הסנדק מחביא בכיס בין 0 ל־5 יהלומים מתוך 15.</li><li>בקופסה יש גם טוקנים של דמויות, לפי מספר השחקנים.</li></ul>
-    <h3>2. גניבת היהלומים</h3>
-    <ul>
-      <li>הקופסה עוברת עם כיוון השעון, מהשחקן שמשמאל לסנדק.</li>
-      <li>כל שחקן מסתכל בחשאי, זוכר מה ראה, ולוקח <b>לפחות יהלום אחד</b> או <b>טוקן אחד</b>. אסור לא לקחת כלום.</li>
-      <li>השחקן הראשון יכול להעלים קודם טוקן אחד לשקית, עד סוף המשחק.</li>
-      <li>מי שמקבל קופסה ריקה הופך לילד רחוב, ומעמיד פנים שהוא לוקח.</li>
-      <li>השחקן האחרון יכול לבחור לא לקחת כלום ולהיות ילד רחוב.</li>
-    </ul>
-    <h3>3. החקירה</h3>
-    <ul>
-      <li>הסנדק שואל את מי שהוא רוצה, באיזה סדר שהוא רוצה. מותר לשקר, לשתוק ולסלף.</li>
-      <li>כשהוא בטוח, הוא מאשים: "רוקן את הכיסים!".</li>
-      <li><b>גנב:</b> היהלומים חוזרים לסנדק, והגנב מודח ואסור לו לדבר.</li>
-      <li><b>מי שלא גנב:</b> הסנדק נותן לו וויסקי. אם לסנדק נגמר הוויסקי, הסנדק מודח.</li>
-      <li><b>סוכן FBI או CIA:</b> המשחק נגמר והסוכן מנצח.</li>
-    </ul>
-    <h3>מי מנצח</h3>
-    <ul>
-      <li><b>הסנדק והחיילים הנאמנים:</b> אם הסנדק החזיר את כל היהלומים.</li>
-      <li><b>סוכן:</b> אם הסנדק האשים אותו. מנצח לבד.</li>
-      <li><b>גנב:</b> אם הסנדק הודח, הגנב שעוד במשחק עם הכי הרבה יהלומים מנצח. בתיקו, כולם מנצחים.</li>
-      <li><b>ילד רחוב:</b> אם גנב מנצח.</li>
-      <li><b>נהג:</b> אם השחקן שמימינו מנצח.</li>
-      <li><b>המנקה (אופציונלי):</b> בצד של הסנדק. כשהסנדק מאשים, הוא יכול לצעוק POW! לפני החשיפה. על סוכן הוא מנצח לבד. על כל אחד אחר, שניהם מודחים: גנב מחזיר את היהלומים, ומי שלא גנב לא מקבל וויסקי.</li>
-    </ul>
-    <h3>שולחן עם הטלפונים</h3>
-    <ul><li>המארח פותח שולחן, וכולם נכנסים עם הקוד או הברקוד.</li><li>סדרו את המקומות בלובי לפי הישיבה האמיתית.</li><li>"הכיס שלי": החזיקו את האצבע כדי להציץ במה שלקחתם.</li></ul>
-    <button class="primary" data-act="closeSheet">הבנתי</button></div>`;
+  return `<div class="sheet rules" role="dialog" aria-modal="true" aria-label="${t('rules.aria')}">
+    <h2>${t('rules.title')}</h2>
+    ${t('rules.html')}
+    <button class="primary" data-act="closeSheet">${t('rules.ok')}</button></div>`;
 }
 
 // ---------- chat ----------
@@ -806,9 +782,9 @@ function rulesSheet() {
 const chatTtl = () => (game && game.settings.chatTtl) || DEFAULT_CHAT_TTL;
 const chatCooldown = () => (game ? game.settings.chatCooldown ?? DEFAULT_CHAT_COOLDOWN : DEFAULT_CHAT_COOLDOWN);
 function fmtTtl(sec) {
-  if (sec === 1) return 'שנייה';
-  if (sec === 60) return 'דקה';
-  return sec % 60 === 0 ? `${sec / 60} דקות` : `${sec} שניות`;
+  if (sec === 1) return t('dur.second');
+  if (sec === 60) return t('dur.minute');
+  return sec % 60 === 0 ? t('dur.minutes', { n: sec / 60 }) : t('dur.seconds', { n: sec });
 }
 // Send stays locked for the table's chatCooldown (set by the host) after my last message: taken from the state, or
 // from the moment I pressed send so it locks before the round trip. The reducer enforces the same limit.
@@ -839,7 +815,7 @@ function renderChat() {
   $('#chatbtn').hidden = ui.chatOpen;
   $('#chatbtn .dot').hidden = !unread;
   const cd = chatCooldown();
-  $('#chatnote').textContent = `ההודעות נעלמות אחרי ${fmtTtl(ttl)}.${cd ? ` אפשר לשלוח הודעה כל ${fmtTtl(cd)}.` : ''}`;
+  $('#chatnote').textContent = t('chat.note', { ttl: fmtTtl(ttl) }) + (cd ? t('chat.noteRate', { cd: fmtTtl(cd) }) : '');
   $('#chatform button').disabled = chatLocked(); // re-checked every tick, so it unlocks on its own
   const sig = [pid, ttl, ...live.map((m) => m.id + nameOf(game, m.by) + chatColor(m.by))].join('|');
   if (sig === chatSig) return;
@@ -847,7 +823,7 @@ function renderChat() {
   const log = $('#chatlog');
   log.innerHTML = live.length
     ? live.map((m) => `<li class="${m.by === pid ? 'me' : ''}" style="--pc:${chatColor(m.by)}"><b>${esc(nameOf(game, m.by))}</b><span>${esc(m.text)}</span></li>`).join('')
-    : '<li class="empty muted small">אין הודעות</li>';
+    : `<li class="empty muted small">${t('chat.empty')}</li>`;
   log.scrollTop = log.scrollHeight;
 }
 async function sendChat() {
@@ -880,6 +856,7 @@ document.addEventListener('click', async (ev) => {
     case 'create': return createTable();
     case 'join': return joinTable();
     case 'joinNow': { const n = readName(); if (n) { ui.joining = true; await act({ type: 'join', name: n, now: Date.now() }); } return; }
+    case 'lang': setLang(getLang() === 'he' ? 'en' : 'he'); lastOverlay = ''; chatSig = ''; return render();
     case 'rules': ui.rules = true; return renderOverlay();
     case 'menu': ui.menu = true; return renderOverlay();
     case 'closeSheet': ui.rules = false; ui.menu = false; return renderOverlay();
@@ -890,7 +867,7 @@ document.addEventListener('click', async (ev) => {
     case 'chatToggle': ui.chatOpen = !ui.chatOpen; if (ui.chatOpen) ui.chatSeen = game ? game.chatSeq : 0; renderChat(); if (ui.chatOpen) $('#chatinput').focus(); return;
     case 'copy': {
       const link = el.dataset.link;
-      try { await navigator.clipboard.writeText(link); toast('הקישור הועתק'); }
+      try { await navigator.clipboard.writeText(link); toast(t('toast.linkCopied')); }
       catch { toast(link); }
       return;
     }
@@ -928,7 +905,7 @@ document.addEventListener('input', (ev) => {
   ui.pickN = n;
   r.style.setProperty('--p', game.box.diamonds > 1 ? `${(n - 1) / (game.box.diamonds - 1) * 100}%` : '0%');
   const v = $('#pickval'); if (v) v.textContent = n;
-  const b = $('[data-act="take"]'); if (b) b.textContent = `קח ${n} ${n === 1 ? 'יהלום' : 'יהלומים'} והעבר`;
+  const b = $('[data-act="take"]'); if (b) b.textContent = t('take.diamonds', { n });
 });
 document.addEventListener('change', (ev) => {
   if (ev.target.id === 'newgf') ui.newGf = ev.target.value;

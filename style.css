@@ -73,6 +73,13 @@ section:last-child { border-bottom: 0; }
 .band button { position: relative; background: transparent; border: 1.5px solid rgba(42,24,6,.5); color: var(--gold-ink); padding: 4px 10px; min-height: 34px; font-size: .9rem; }
 .band button::after { content: ""; position: absolute; inset: -6px -3px; } /* keeps the compact look, gives a 46px-tall tap target */
 
+/* Very narrow phones: with the language button there is no room for the title next to the table code */
+@media (max-width: 359px) {
+  .band { gap: 8px; }
+  .band:has(.code) .title { display: none; }
+  .band .code { margin-inline-end: auto; }
+}
+
 /* Controls */
 button, .btn {
   font: inherit; font-weight: 700; color: var(--cream); background: var(--wood-2);
@@ -208,6 +215,8 @@ body.seat-sorting, body.seat-sorting * { cursor: grab !important; } /* no cursor
 
 /* Role portraits */
 .roleimg { display: block; aspect-ratio: 4 / 5; object-fit: cover; border-radius: 12px; background: var(--wood-2); pointer-events: none; }
+/* The portraits carry a Hebrew caption ribbon along the bottom edge. In English it is cropped off; the role name is always shown as text next to it. */
+html[lang="en"] .roleimg { aspect-ratio: 4 / 4.5; object-position: top; }
 .roleimg.card { width: 104px; flex: none; border: 1.5px solid var(--gold); }
 .roleimg.big { width: min(200px, 56%); margin-inline: auto; border: 2px solid var(--gold); box-shadow: 0 8px 24px rgba(0,0,0,.45); }
 .roleimg.tiny { width: 28px; border-radius: 5px; border: 1px solid var(--line); flex: none; }
@@ -274,7 +283,7 @@ button.pow { font-family: var(--font-display); font-size: 2.4rem; background: va
 
 /* solo debug bar (?solo=N) */
 body.solo { padding-bottom: 56px; }
-#solo { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); background: #120a06; border-top: 1px solid var(--line); direction: rtl; }
+#solo { position: fixed; inset-inline: 0; bottom: 0; z-index: 40; display: flex; gap: 6px; overflow-x: auto; padding: 8px 10px calc(8px + env(safe-area-inset-bottom, 0px)); background: #120a06; border-top: 1px solid var(--line); }
 #solo button { flex: none; min-height: 36px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--line); background: transparent; color: inherit; font: inherit; font-size: .85rem; }
 #solo button.on { background: var(--gold, #d9ab52); color: #1d110c; border-color: transparent; font-weight: 700; }
 

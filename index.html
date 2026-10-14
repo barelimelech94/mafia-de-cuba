@@ -9,23 +9,23 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Suez+One&family=Assistant:wght@400;600;700;800&display=swap">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%231d110c'/%3E%3Cpath d='M9 12h14l-7 11z' fill='%23d9ab52'/%3E%3Cpath d='M9 12l3-4h8l3 4z' fill='%23f0cf86'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=11">
+<link rel="stylesheet" href="style.css?v=12">
 </head>
 <body>
 <div id="app" aria-live="polite"></div>
 <div id="chat" hidden>
-  <button id="chatbtn" data-act="chatToggle" aria-label="צ'אט">צ'אט<span class="dot" hidden></span></button>
-  <div id="chatpanel" role="dialog" aria-label="צ'אט" hidden>
-    <div class="chathead"><h3>צ'אט</h3><button class="icon ghost" data-act="chatToggle" aria-label="סגור את הצ'אט">✕</button></div>
+  <button id="chatbtn" data-act="chatToggle" data-i18n-aria="chat.title" aria-label="צ'אט"><span data-i18n="chat.title">צ'אט</span><span class="dot" hidden></span></button>
+  <div id="chatpanel" role="dialog" data-i18n-aria="chat.title" aria-label="צ'אט" hidden>
+    <div class="chathead"><h3 data-i18n="chat.title">צ'אט</h3><button class="icon ghost" data-act="chatToggle" data-i18n-aria="chat.close" aria-label="סגור את הצ'אט">✕</button></div>
     <p class="small muted" id="chatnote"></p>
     <ul id="chatlog" aria-live="polite"></ul>
-    <form id="chatform" autocomplete="off"><input id="chatinput" maxlength="200" placeholder="הודעה…" aria-label="הודעה"><button class="primary" type="submit">שלח</button></form>
+    <form id="chatform" autocomplete="off"><input id="chatinput" maxlength="200" data-i18n-ph="chat.placeholder" placeholder="הודעה…" data-i18n-aria="chat.messageAria" aria-label="הודעה"><button class="primary" type="submit" data-i18n="chat.send">שלח</button></form>
   </div>
 </div>
 <div id="overlay" hidden></div>
 <div id="toast" role="status" hidden></div>
 <script src="vendor/qrcode.js"></script>
 <script src="vendor/peerjs.min.js"></script>
-<script type="module" src="app.js?v=14"></script>
+<script type="module" src="app.js?v=15"></script>
 </body>
 </html>
